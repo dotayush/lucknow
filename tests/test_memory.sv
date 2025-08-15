@@ -42,7 +42,8 @@ module test_memory;
   end
 
   task write_word(input [ADDR_WIDTH-1:0] wad, input [DATA_WIDTH-1:0] wdt);
-    begin @(negedge clk);
+    begin
+      @(negedge clk);
       addr = wad;
       data_in = wdt;
       write_enable = 1;
@@ -75,16 +76,17 @@ module test_memory;
     rst_n = 1; // release reset
     @(posedge clk);
 
-    read_word(8'h00, 32'h0); // read uninitialized memory
     read_word(8'h04, 32'h0); // read uninitialized memory
+    read_word(8'h00, 32'h0); // read uninitialized memory
     read_word(8'h08, 32'h0); // read uninitialized memory
 
+
+    write_word(8'h04, 32'hcafebabe); // write to address 0x04
+    read_word(8'h04, 32'hcafebabe); // read back the value
 
     write_word(8'h00, 32'hdeadbeef); // write to address 0x00
     read_word(8'h00, 32'hdeadbeef); // read back the value
 
-    write_word(8'h04, 32'hcafebabe); // write to address 0x04
-    read_word(8'h04, 32'hcafebabe); // read back the value
 
     write_word(8'h08, 32'h12345678); // write to address 0x08
     read_word(8'h08, 32'h12345678); // read back the value
@@ -105,6 +107,7 @@ module test_memory;
       read_word(rs, rd); // read back the value
     end
 
+    repeat (2) @(posedge clk); // wait for clock edges to capture the last event.
     $display("all tests passed");
     $finish;
   end

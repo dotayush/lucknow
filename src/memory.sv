@@ -7,7 +7,6 @@ module memory #(parameter ADDR_WIDTH = 8, DATA_WIDTH = 32) (
     output reg [DATA_WIDTH-1:0] data_out
 );
     localparam int WORDS = 1 << (ADDR_WIDTH - 2); // address should be a multiple of 4 (f e d c b a 0 0)
-
     reg [DATA_WIDTH-1:0] mem [0:WORDS-1]; // array
 
     always @(posedge clk) begin
