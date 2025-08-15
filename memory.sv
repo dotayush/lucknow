@@ -11,10 +11,9 @@ module memory #(parameter ADDR_WIDTH = 8, DATA_WIDTH = 32) (
     reg [DATA_WIDTH-1:0] mem [0:WORDS-1]; // array
 
     always @(posedge clk) begin
-      if (!rst_n) begin
-          // reset mem
+      if (!rst_n) begin // pull low for reset
           for (int i = 0; i < WORDS; i = i + 1) begin
-              mem[i] <= '0;
+              mem[i] <= '0; // reset to zero
           end
       end
       else if (write_enable && addr[1:0] == 2'b00) begin
