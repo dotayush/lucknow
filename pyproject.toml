@@ -1,0 +1,9 @@
+[project]
+name = "risc-core"
+version = "0.1.0"
+description = "RISC-V Core Implementation"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "hdl-checker>=0.7.4",
+]
