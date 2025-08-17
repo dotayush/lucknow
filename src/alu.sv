@@ -1,7 +1,9 @@
+import isa_shared::*;
+
 module alu #(parameter DATA_WIDTH = 32) (
     input wire [DATA_WIDTH-1:0] a,
     input wire [DATA_WIDTH-1:0] b,
-    input wire [2:0] alu_op, // ALU operation code
+    input alu_ops_e alu_op, // ALU operation code
 
     output reg [DATA_WIDTH-1:0] result,
     output wire zero, // zero flag
@@ -9,13 +11,9 @@ module alu #(parameter DATA_WIDTH = 32) (
     output wire overflow // overflow flag
 );
 
-  typedef enum logic [2:0] {
-    ADD = 3'b000 // Load Word
-  } alu_ops_e;
-
   always_comb begin
     case (alu_op)
-      ADD: result = a + b;
+      ALU_ADD: result = a + b;
       default: result = '0; // Default case to avoid latches
     endcase
   end

@@ -1,4 +1,5 @@
 `timescale 1ns/1ps
+import isa_shared::*;
 
 module test_signext;
 
@@ -36,7 +37,7 @@ module test_signext;
     $dumpfile("./tests/results/test_signext.vcd");
     $dumpvars(0, test_signext);
 
-    imm_op = dut.IMM3120;
+    imm_op = isa_shared::IMM_3120;
 
     repeat (1000) begin
       instruction = {$random};

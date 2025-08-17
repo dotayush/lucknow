@@ -1,4 +1,5 @@
 `timescale 1ns/1ps
+import isa_shared::*;
 
 module test_alu;
 
@@ -19,7 +20,7 @@ module test_alu;
   // dut io
   reg [DATA_WIDTH-1:0] a;
   reg [DATA_WIDTH-1:0] b;
-  reg [2:0] alu_op; // ALU operation code
+  alu_ops_e alu_op; // ALU operation code
 
   wire [DATA_WIDTH-1:0] result;
   wire zero; // zero flag
@@ -47,7 +48,7 @@ module test_alu;
     repeat (1000) begin
       a = {$random};
       b = {$random};
-      alu_op = dut.ADD; // Load Word operation
+      alu_op = isa_shared::ALU_ADD; // addition operation
 
       #1; // wait for result
 
