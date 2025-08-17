@@ -2,27 +2,34 @@
 
 module test_memory;
 
-  localparam int ADDR_WIDTH = 8;
+  localparam int WORDS = 1024; // 64 words of memory
   localparam int DATA_WIDTH = 32;
   localparam real CLK_PERIOD = 10.0; // 100 MHz clock
   localparam real CLK_HALF_PERIOD = CLK_PERIOD / 2.0;
+  reg test_failed;
+
+  task finish;
+    begin
+      if (test_failed) begin
+        $display("Test failed!");
+      end else begin
+        $display("Test passed!");
+      end
+      $finish; // End simulation
+    end
+  endtask
 
   // dut io
   reg clk;
   reg rst_n;
-  reg [ADDR_WIDTH-1:0] addr;
+  reg [DATA_WIDTH-1:0] addr;
   reg [DATA_WIDTH-1:0] data_in;
   reg write_enable;
   wire [DATA_WIDTH-1:0] data_out;
 
-  initial begin
-    $dumpfile("waves.vcd");
-    $dumpvars(0, test_memory);
-  end
-
   // dut instantiation
   memory #(
-    .ADDR_WIDTH(ADDR_WIDTH),
+    .WORDS(WORDS),
     .DATA_WIDTH(DATA_WIDTH)
   ) dut (
     .clk(clk),
@@ -41,7 +48,7 @@ module test_memory;
     end
   end
 
-  task write_word(input [ADDR_WIDTH-1:0] wad, input [DATA_WIDTH-1:0] wdt);
+  task write_word(input [DATA_WIDTH-1:0] wad, input [DATA_WIDTH-1:0] wdt);
     begin
       @(negedge clk);
       addr = wad;
@@ -53,12 +60,13 @@ module test_memory;
     end
   endtask
 
-  task read_word(input [ADDR_WIDTH-1:0] rad, input [DATA_WIDTH-1:0] rexp);
+  task read_word(input [DATA_WIDTH-1:0] rad, input [DATA_WIDTH-1:0] rexp);
     begin
       @(negedge clk);
       addr = rad;
       #1; // wait for data_out to be updated
       if (data_out !== rexp) begin
+        test_failed = 1;
         $display("[%0t] error: addr=0x%0h expected=0x%08x, got=0x%08x", $time, addr, rexp, data_out);
       end else begin
         $display("[%0t] OK: addr=0x%0h data=0x%08x", $time, addr, data_out);
@@ -67,6 +75,9 @@ module test_memory;
   endtask
 
   initial begin
+    $dumpfile("./tests/results/test_memory.vcd");
+    $dumpvars(0, test_memory);
+
     addr = '0;
     data_in = '0;
     write_enable = 0;
@@ -76,40 +87,25 @@ module test_memory;
     rst_n = 1; // release reset
     @(posedge clk);
 
-    read_word(8'h04, 32'h0); // read uninitialized memory
-    read_word(8'h00, 32'h0); // read uninitialized memory
-    read_word(8'h08, 32'h0); // read uninitialized memory
+    // read uninitialized memory
+    read_word(32'h00000010, 32'h0);
+    read_word(32'h00000000, 32'h0);
+    read_word(32'h00000008, 32'h0);
 
+    repeat (2) @(posedge clk); // rest for two clock cycles (20ns)
 
-    write_word(8'h04, 32'hcafebabe); // write to address 0x04
-    read_word(8'h04, 32'hcafebabe); // read back the value
-
-    write_word(8'h00, 32'hdeadbeef); // write to address 0x00
-    read_word(8'h00, 32'hdeadbeef); // read back the value
-
-
-    write_word(8'h08, 32'h12345678); // write to address 0x08
-    read_word(8'h08, 32'h12345678); // read back the value
-
-    write_word(8'h02, 32'h11111111); // write to address 0x02 (should not write, misaligned)
-    read_word(8'h00, 32'hdeadbeef); // read back the value (should be unchanged)
-
-    write_word(8'h04, 32'h22222222); // write to address 0x04 (should write)
-    read_word(8'h04, 32'h22222222); // read back the value
-
-    repeat (10) begin
-      reg [ADDR_WIDTH-1:0] rs;
+    repeat (100) begin
+      reg [DATA_WIDTH-1:0] rs;
       reg [DATA_WIDTH-1:0] rd;
 
-      rs = {$random} & !(8'h03);
+      rs = {$random} & ~(8-1) & 32'h000000FF; // random & bit_not(7) = random & !...111 = random000 = byte-aligned address; then set the first 24 bits to zero to keep within the 256 bytes of memory
       rd = {$random};
       write_word(rs, rd); // write random data to random address
       read_word(rs, rd); // read back the value
     end
 
     repeat (2) @(posedge clk); // wait for clock edges to capture the last event.
-    $display("all tests passed");
-    $finish;
+    finish;
   end
 
 endmodule

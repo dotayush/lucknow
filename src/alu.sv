@@ -10,12 +10,12 @@ module alu #(parameter DATA_WIDTH = 32) (
 );
 
   typedef enum logic [2:0] {
-    LW = 3'b000 // Load Word
+    ADD = 3'b000 // Load Word
   } alu_ops_e;
 
   always_comb begin
     case (alu_op)
-      LW: result = a + b;
+      ADD: result = a + b;
       default: result = '0; // Default case to avoid latches
     endcase
   end

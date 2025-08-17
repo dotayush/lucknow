@@ -3,74 +3,63 @@
 module test_signext;
 
   localparam int DATA_WIDTH = 32;
+  reg [DATA_WIDTH-1:0] expected_immediate;
+  reg test_failed;
+
+  task finish;
+    begin
+      if (test_failed) begin
+        $display("Test failed!");
+      end else begin
+        $display("Test passed!");
+      end
+      $finish; // End simulation
+    end
+  endtask
 
   // dut io
   reg [24:0] instruction;
-  reg [2:0] alu_op;
+  reg [2:0] imm_op;
   wire [DATA_WIDTH-1:0] sign_extended_data;
-
-  initial begin
-    $dumpfile("./tests/results/test_signext.vcd");
-    $dumpvars(0, test_signext);
-  end
 
   // dut instantiation
   signext #(
     .DATA_WIDTH(DATA_WIDTH)
   ) dut (
     .instruction(instruction),
-    .alu_op(alu_op),
+    .imm_op(imm_op),
     .sign_extended_data(sign_extended_data)
   );
 
   // test cases
   initial begin
-    alu_op = dut.LW;
+    $dumpfile("./tests/results/test_signext.vcd");
+    $dumpvars(0, test_signext);
 
-    instruction = 25'b000000000000_00000_000_00000; // [24:13] = 0x000 (zero immediate)
-    #1;
-    if (sign_extended_data !== 32'h00000000)
-      $display("[%0t] ERROR: expected 0x%h, got 0x%h", $time, 32'h00000000, sign_extended_data);
-    else
-      $display("[%0t] OK: 0x%h", $time, sign_extended_data);
+    imm_op = dut.IMM3120;
 
-    instruction = 25'b111111111111_11111_111_11111; // [24:13] = 0xFFF (negative -1)
-    #1;
-    if (sign_extended_data !== 32'hFFFFFFFF)
-      $display("[%0t] ERROR: expected 0x%h, got 0x%h", $time, 32'hFFFFFFFF, sign_extended_data);
-    else
-      $display("[%0t] OK: 0x%h", $time, sign_extended_data);
-
-    instruction = 25'b011111111111_00000_000_00000; // [24:13] = 0x7FF (max positive 2047)
-    #1;
-    if (sign_extended_data !== 32'h000007FF)
-      $display("[%0t] ERROR: expected 0x%h, got 0x%h", $time, 32'h000007FF, sign_extended_data);
-    else
-      $display("[%0t] OK: 0x%h", $time, sign_extended_data);
-
-    instruction = 25'b100000000000_00000_000_00000; // [24:13] = 0x800 (min negative -2048)
-    #1;
-    if (sign_extended_data !== 32'hFFFFF800)
-      $display("[%0t] ERROR: expected 0x%h, got 0x%h", $time, 32'hFFFFF800, sign_extended_data);
-    else
-      $display("[%0t] OK: 0x%h", $time, sign_extended_data);
-
-    instruction = 25'b111100000000_00000_000_00000; // [24:13] = 0xF00 (mid negative -4096)
-    #1;
-    // 1111_0000_0000
-    if (sign_extended_data !== 32'hFFFFFF00)
-      $display("[%0t] ERROR: expected 0x%h, got 0x%h", $time, 32'hFFFFFF00, sign_extended_data);
-    else
-      $display("[%0t] OK: 0x%h", $time, sign_extended_data);
+    repeat (1000) begin
+      instruction = {$random};
+      expected_immediate = {{(DATA_WIDTH-12){instruction[24]}}, instruction[24:13]};
+      #1; // wait for sign_extended_data to be updated
+      if (sign_extended_data !== expected_immediate) begin
+        test_failed = 0;
+        $display("[%0t] error: expected 0b%b, got 0b%b", $time, expected_immediate, sign_extended_data);
+      end else begin
+        $display("[%0t] OK: 0b%b", $time, sign_extended_data);
+      end
+    end
 
     instruction = 25'b000000000000_10101_010_10101; // [24:13] = 0x000 (zero immediate)
     #1;
-    if (sign_extended_data !== 32'h00000000)
-      $display("[%0t] ERROR: expected 0x%h, got 0x%h", $time, 32'h00000000, sign_extended_data);
-    else
+    if (sign_extended_data !== 32'h00000000) begin
+      test_failed = 1;
+      $display("[%0t] error: expected 0x%h, got 0x%h", $time, 32'h00000000, sign_extended_data);
+    end else begin
       $display("[%0t] OK: 0x%h", $time, sign_extended_data);
+    end
 
-    $finish; // End simulation
+    finish; // End simulation
   end
 
 endmodule

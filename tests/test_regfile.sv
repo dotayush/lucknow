@@ -6,6 +6,18 @@ module test_regfile;
   localparam int REG_BUS_WIDTH = $clog2(DATA_WIDTH);
   localparam real CLK_PERIOD = 10.0; // 100 MHz clock
   localparam real CLK_HALF_PERIOD = CLK_PERIOD / 2.0;
+  reg test_failed;
+
+  task finish;
+    begin
+      if (test_failed) begin
+        $display("Test failed!");
+      end else begin
+        $display("Test passed!");
+      end
+      $finish; // End simulation
+    end
+  endtask
 
   // dut io
   reg clk;
@@ -17,11 +29,6 @@ module test_regfile;
   reg write_enable;
   reg [REG_BUS_WIDTH-1:0] rd;
   reg [DATA_WIDTH-1:0] rd_data;
-
-  initial begin
-    $dumpfile("./tests/results/test_regfile.vcd");
-    $dumpvars(0, test_regfile);
-  end
 
   // dut instantiation
   regfile #(
@@ -66,10 +73,12 @@ module test_regfile;
       end else if (rg_sel == 2'b01) begin
         rs2 = rad; // read from rs2
       end else begin
+        test_failed = 1;
         $display("[%0t] error: invalid register select 0x%0h", $time, rg_sel);
       end
       #1; // wait for selected register data to be updated
       if (rs1_data !== rexp) begin
+        test_failed = 1;
         $display("[%0t] error: read from %s failed: expected=0x%08x, got=0x%08x", $time, (rg_sel == 2'b00 ? "rs1" : "rs2"), rexp, rs1_data);
       end else begin
         $display("[%0t] OK: read from %s addr=0x%0h data=0x%08x", $time, (rg_sel == 2'b00 ? "rs1" : "rs2"), rad, rs1_data);
@@ -78,6 +87,9 @@ module test_regfile;
   endtask
 
   initial begin
+    $dumpfile("./tests/results/test_regfile.vcd");
+    $dumpvars(0, test_regfile);
+
     rs1 = '0;
     rs2 = '0;
     write_enable = 0;
@@ -113,8 +125,7 @@ module test_regfile;
     end
 
     repeat (2) @(posedge clk); // wait for clock edges to capture the last event.
-    $display("all tests passed");
-    $finish; // end simulation
+    finish; // end simulation
   end
 
 endmodule

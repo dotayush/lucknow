@@ -3,6 +3,18 @@
 module test_alu;
 
   localparam int DATA_WIDTH = 32;
+  reg test_failed;
+
+  task finish;
+    begin
+      if (test_failed) begin
+        $display("Test failed!");
+      end else begin
+        $display("Test passed!");
+      end
+      $finish; // End simulation
+    end
+  endtask
 
   // dut io
   reg [DATA_WIDTH-1:0] a;
@@ -13,11 +25,6 @@ module test_alu;
   wire zero; // zero flag
   wire carry; // carry flag
   wire overflow; // overflow flag
-
-  initial begin
-    $dumpfile("./tests/results/test_alu.vcd");
-    $dumpvars(0, test_alu);
-  end
 
   // dut instantiation
   alu #(
@@ -34,22 +41,25 @@ module test_alu;
 
   // test cases
   initial begin
+    $dumpfile("./tests/results/test_alu.vcd");
+    $dumpvars(0, test_alu);
 
-    for (int i = 0; i < 1000; i++) begin
+    repeat (1000) begin
       a = {$random};
       b = {$random};
-      alu_op = dut.LW; // Load Word operation
+      alu_op = dut.ADD; // Load Word operation
 
       #1; // wait for result
 
       if (result !== (a + b)) begin
+        test_failed = 1;
         $display("[%0t] error: expected result 0x%h, got 0x%h", $time, (a + b), result);
       end else begin
         $display("[%0t] OK: result is 0x%h", $time, result);
       end
     end
 
-    $finish; // End simulation
+    finish; // End simulation
   end
 
 endmodule
