@@ -48,7 +48,7 @@ module decoder #(parameter DATA_WIDTH = 32) (
     if (alu_op != ALU_NOP || imm_op != IMM_NOP) begin
       assert (!(mem_write && mem_read)) else begin
         $display("[%0t] error: instruction %b cannot be both a memory write and read at the same time. mem_write=%b, mem_read=%b", $time, instruction, mem_write, mem_read);
-        $finish;
+        $fatal(1);
       end
     end
   end

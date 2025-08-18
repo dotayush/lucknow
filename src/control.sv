@@ -15,7 +15,7 @@ module control #(parameter DATA_WIDTH = 32) (
       data_in <= 0;
     end else begin
       // Control logic goes here (simplified example)
-      pc <= pc + 1; // Increment PC by instruction size (assuming 4 bytes)
+      pc <= pc + 4; // Increment PC by instruction size (assuming 4 bytes)
     end
   end
 
@@ -53,28 +53,34 @@ module control #(parameter DATA_WIDTH = 32) (
 
 
   always @* begin
-    alu_a = rs1_data;
-    alu_b = (imm_op != IMM_NOP) ? sign_extended_data : rs2_data;
-
-    addr   = alu_result; // always computed, used by load/store as address & pure alu ops as value
-    data_in = rs2_data;  // value to write to memory (for stores)
-
-    // default (don’t care)
-    rd_data = 0;
-
     /*
-    * is_load  => reg_write=1, mem_write=0, mem_read = 1, rd_data=data_out
     * is_store => reg_write=0, mem_write=1, mem_read = 0, rd_data=0
     * is_alu   => reg_write=1, mem_write=0, mem_read = 0, rd_data=alu_result
+    * is_load  => reg_write=1, mem_write=0, mem_read = 1, rd_data=data_out
     */
-    if (mem_read) begin
-      rd_data = data_out; // load instruction, read from memory
-    end else if (mem_write) begin
+    if (!reg_write && mem_write && !mem_read) begin
       rd_data = 0; // store instruction, no data to write back to register file
-    end else if (reg_write) begin
+    end
+    else if (reg_write && !mem_write && !mem_read) begin
       rd_data = alu_result; // ALU operation, write result back to register file
-    end else begin
+    end
+    else if (reg_write && !mem_write && mem_read) begin
+      // rd_data = data_memory[rs1_data + sign_extended_data];
+      // alu_a must contain register mem [ rs1 ]
+      alu_a = rs1_data; // rs1 is set by decoeder, so rs1_data = register_mem[rs1]
+      alu_b = (imm_op != IMM_NOP) ? sign_extended_data : rs2_data; // rs2 is set by decoder, so rs2_data = register_mem[rs2]
+      addr = alu_result; // memory_address = alu_a + alu_b
+      rd_data = data_out; // rd is set by decoder
+    end
+    else begin
       rd_data = 0; // default case, no operation
+    end
+
+    if (mem_read || mem_write) begin
+      assert (addr[1:0] == 2'b00) else begin
+        $display("[%0t] fatal: memory address %h is not aligned to 4 bytes", $time, addr);
+        $fatal(1);
+      end
     end
   end
 
