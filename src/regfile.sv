@@ -17,8 +17,10 @@ module regfile #(parameter DATA_WIDTH = 32) (
   reg [DATA_WIDTH-1:0] regs [0:REG_COUNT-1]; // register array
 
   // read logic
-  assign rs1_data = regs[rs1];
-  assign rs2_data = regs[rs2];
+  always_comb begin
+      rs1_data = regs[rs1];
+      rs2_data = regs[rs2];
+  end
 
   // write logic
   always @(posedge clk or negedge rst_n) begin
