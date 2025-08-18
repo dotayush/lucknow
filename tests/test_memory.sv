@@ -24,7 +24,7 @@ module test_memory;
   reg rst_n;
   reg [DATA_WIDTH-1:0] addr;
   reg [DATA_WIDTH-1:0] data_in;
-  reg write_enable;
+  reg mem_write;
   wire [DATA_WIDTH-1:0] data_out;
 
   // dut instantiation
@@ -36,7 +36,7 @@ module test_memory;
     .rst_n(rst_n),
     .addr(addr),
     .data_in(data_in),
-    .write_enable(write_enable),
+    .mem_write(mem_write),
     .data_out(data_out)
   );
 
@@ -53,9 +53,9 @@ module test_memory;
       @(negedge clk);
       addr = wad;
       data_in = wdt;
-      write_enable = 1;
+      mem_write = 1;
       @(negedge clk); // wait for write to complete
-      write_enable = 0;
+      mem_write = 0;
       data_in = '0;
     end
   endtask
@@ -80,7 +80,7 @@ module test_memory;
 
     addr = '0;
     data_in = '0;
-    write_enable = 0;
+    mem_write = 0;
 
     rst_n = 0; // pull reset low
     repeat (2) @(posedge clk); // @ second posedge clk

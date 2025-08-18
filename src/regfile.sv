@@ -9,7 +9,7 @@ module regfile #(parameter DATA_WIDTH = 32) (
     output reg [DATA_WIDTH-1:0] rs2_data,
 
     // writes
-    input wire write_enable,
+    input wire reg_write,
     input wire [$clog2(DATA_WIDTH)-1:0] rd,
     input wire [DATA_WIDTH-1:0] rd_data
 );
@@ -29,7 +29,7 @@ module regfile #(parameter DATA_WIDTH = 32) (
               regs[i] <= 0; // reset to zero
           end
       end
-      else if (write_enable && rd != 0) begin // avoid writing to x0 as per RISC-V spec
+      else if (reg_write && rd != 0) begin // avoid writing to x0 as per RISC-V spec
           regs[rd] <= rd_data;
       end
   end

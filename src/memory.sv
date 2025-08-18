@@ -1,12 +1,25 @@
-module memory #(parameter WORDS = 64, DATA_WIDTH = 32) (
+module memory #(parameter WORDS = 64, DATA_WIDTH = 32, MEM_INIT = "") (
     input wire clk,
     input wire rst_n,
+
     input wire [DATA_WIDTH-1:0] addr,
+    output reg [DATA_WIDTH-1:0] data_out,
+
     input wire [DATA_WIDTH-1:0] data_in,
-    input wire write_enable,
-    output reg [DATA_WIDTH-1:0] data_out
+    input wire mem_write
 );
     reg [DATA_WIDTH-1:0] mem [0:WORDS-1]; // array
+
+    initial begin
+        if (MEM_INIT != "") begin
+            $readmemh(MEM_INIT, mem); // load memory from file if specified
+        end
+        else begin
+            for (int i = 0; i < WORDS; i = i + 1) begin
+                mem[i] = '0; // initialize memory to zero
+            end
+        end
+    end
 
     always @(posedge clk) begin
       if (!rst_n) begin // pull low for reset
@@ -14,12 +27,13 @@ module memory #(parameter WORDS = 64, DATA_WIDTH = 32) (
               mem[i] <= '0; // reset to zero
           end
       end
-      else if (write_enable && addr[2:0] == 3'b000) begin // the address must be byte aligned; last 3 bits must be 0
+      else if (mem_write && addr[2:0] == 3'b000) begin // the address must be byte aligned; last 3 bits must be 0
           // system has 32-bit words, each word is 4 bytes
           // and the memory is byte aligned. even though the
-          // address space is 2^32 bits, we only use 64 words * bytes/word
-          // = 256 bytes of memory. this means the address space usable has
-          // address only from 0x00_00_00_00 (0) to 0x00_00_00_FF (255) instead of
+          // address space is 2^32 bits, we only use 64 words/bytes.
+          // this means the address space usable has
+          // address only from 0x00_00_00_00 (0) to 0x00_00_00_3F (63) instead
+          // of the full 32-bit address space of
           // 0x00_00_00_00 (0) to 0xFF_FF_FF_FF (4,294,967,295).
           mem[addr[DATA_WIDTH-1:0]] <= data_in;
       end

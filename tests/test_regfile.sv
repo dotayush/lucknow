@@ -26,7 +26,7 @@ module test_regfile;
   reg [REG_BUS_WIDTH-1:0] rs2;
   wire [DATA_WIDTH-1:0] rs1_data;
   wire [DATA_WIDTH-1:0] rs2_data;
-  reg write_enable;
+  reg reg_write;
   reg [REG_BUS_WIDTH-1:0] rd;
   reg [DATA_WIDTH-1:0] rd_data;
 
@@ -40,7 +40,7 @@ module test_regfile;
     .rs2(rs2),
     .rs1_data(rs1_data),
     .rs2_data(rs2_data),
-    .write_enable(write_enable),
+    .reg_write(reg_write),
     .rd(rd),
     .rd_data(rd_data)
   );
@@ -58,9 +58,9 @@ module test_regfile;
       @(negedge clk);
       rd = wad;
       rd_data = wdt;
-      write_enable = 1;
+      reg_write = 1;
       @(negedge clk); // wait for write to complete
-      write_enable = 0;
+      reg_write = 0;
       rd_data = '0;
     end
   endtask
@@ -92,7 +92,7 @@ module test_regfile;
 
     rs1 = '0;
     rs2 = '0;
-    write_enable = 0;
+    reg_write = 0;
     rd = '0;
     rd_data = '0;
 

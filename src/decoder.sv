@@ -2,12 +2,12 @@ import isa_shared::*;
 
 module decoder #(parameter DATA_WIDTH = 32) (
     input wire [DATA_WIDTH-1:0] instruction,
-    // input wire alu_zero,
 
     output reg [2:0] alu_op,
     output reg [2:0] imm_op,
     output reg mem_write,
     output reg reg_write,
+    output reg mem_read,
     output reg [$clog2(DATA_WIDTH)-1:0] rs1,
     output reg [$clog2(DATA_WIDTH)-1:0] rs2,
     output reg [$clog2(DATA_WIDTH)-1:0] rd
@@ -21,6 +21,7 @@ module decoder #(parameter DATA_WIDTH = 32) (
     imm_op = IMM_NOP;
     mem_write = 0;
     reg_write = 0;
+    mem_read = 0;
     rs1 = '0;
     rs2 = '0;
     rd = '0;
@@ -34,6 +35,7 @@ module decoder #(parameter DATA_WIDTH = 32) (
             alu_op = ALU_ADD;
             mem_write = 0;
             reg_write = 1;
+            mem_read = 1;
           end
           default: begin
           end
@@ -42,6 +44,13 @@ module decoder #(parameter DATA_WIDTH = 32) (
       default: begin
       end
     endcase
+
+    if (alu_op != ALU_NOP || imm_op != IMM_NOP) begin
+      assert (!(mem_write && mem_read)) else begin
+        $display("[%0t] error: instruction %b cannot be both a memory write and read at the same time. mem_write=%b, mem_read=%b", $time, instruction, mem_write, mem_read);
+        $finish;
+      end
+    end
   end
 
 endmodule
