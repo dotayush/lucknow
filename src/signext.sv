@@ -1,4 +1,6 @@
+`ifndef ISA_SHARED_IMPORT
 import isa_shared::*;
+`endif
 
 module signext #(parameter DATA_WIDTH = 32) (
     input wire [DATA_WIDTH-1:0] instruction,

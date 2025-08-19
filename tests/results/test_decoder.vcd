@@ -1,5 +1,5 @@
 $date
-	Tue Aug 19 03:21:09 2025
+	Tue Aug 19 11:34:18 2025
 $end
 $version
 	Icarus Verilog
@@ -16,35 +16,42 @@ $var wire 1 % mem_write $end
 $var wire 1 & mem_read $end
 $var wire 3 ' imm_op [2:0] $end
 $var wire 3 ( alu_op [2:0] $end
-$var reg 32 ) instruction [31:0] $end
-$var reg 1 * test_failed $end
+$var parameter 32 ) DATA_WIDTH $end
+$var reg 32 * instruction [31:0] $end
+$var reg 1 + test_failed $end
 $scope module dut $end
-$var wire 32 + instruction [31:0] $end
-$var wire 7 , inst_op [6:0] $end
-$var reg 3 - alu_op [2:0] $end
-$var reg 3 . imm_op [2:0] $end
+$var wire 32 , instruction [31:0] $end
+$var wire 7 - inst_op [6:0] $end
+$var parameter 32 . DATA_WIDTH $end
+$var reg 3 / alu_op [2:0] $end
+$var reg 3 0 imm_op [2:0] $end
 $var reg 1 & mem_read $end
 $var reg 1 % mem_write $end
-$var reg 5 / rd [4:0] $end
+$var reg 5 1 rd [4:0] $end
 $var reg 1 # reg_write $end
-$var reg 5 0 rs1 [4:0] $end
-$var reg 5 1 rs2 [4:0] $end
+$var reg 5 2 rs1 [4:0] $end
+$var reg 5 3 rs2 [4:0] $end
 $upscope $end
 $scope task finish $end
 $upscope $end
 $upscope $end
 $enddefinitions $end
+$comment Show the parameter values. $end
+$dumpall
+b100000 .
+b100000 )
+$end
 #0
 $dumpvars
-b0 1
-b10101 0
-b10101 /
-b0 .
-b0 -
-b11 ,
-b10101010101010000011 +
-x*
-b10101010101010000011 )
+b0 3
+b10101 2
+b10101 1
+b0 0
+b0 /
+b11 -
+b10101010101010000011 ,
+x+
+b10101010101010000011 *
 b0 (
 b0 '
 1&
@@ -56,20 +63,20 @@ b0 !
 $end
 #1000
 b0 $
-b0 /
+b0 1
 b0 "
-b0 0
+b0 2
 0&
 0#
 b111 '
-b111 .
+b111 0
 b111 (
-b111 -
-b1111111 ,
-b11111111111111111111111111111111 )
-b11111111111111111111111111111111 +
+b111 /
+b1111111 -
+b11111111111111111111111111111111 *
+b11111111111111111111111111111111 ,
 #2000
+b0 -
+b0 *
 b0 ,
-b0 )
-b0 +
 #3000

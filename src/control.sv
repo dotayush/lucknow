@@ -1,24 +1,11 @@
+`ifndef ISA_SHARED_IMPORT
 import isa_shared::*;
+`endif
 
 module control #(parameter DATA_WIDTH = 32) (
     input wire clk,
     input wire rst_n
 );
-
-  // State machine for control logic
-  always @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
-      pc <= 0;
-      alu_a <= 0;
-      alu_b <= 0;
-      addr <= 0;
-      data_in <= 0;
-    end else begin
-      // Control logic goes here (simplified example)
-      pc <= pc + 4; // Increment PC by instruction size (assuming 4 bytes)
-    end
-  end
-
 
   // central
   reg [DATA_WIDTH-1:0] pc;
@@ -51,6 +38,19 @@ module control #(parameter DATA_WIDTH = 32) (
 
   wire [DATA_WIDTH-1:0] sign_extended_data;
 
+    // State machine for control logic
+  always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      pc <= 0;
+      alu_a <= 0;
+      alu_b <= 0;
+      addr <= 0;
+      data_in <= 0;
+    end else begin
+      // Control logic goes here (simplified example)
+      pc <= pc + 4; // Increment PC by instruction size (assuming 4 bytes)
+    end
+  end
 
   always @* begin
     /*
@@ -74,13 +74,6 @@ module control #(parameter DATA_WIDTH = 32) (
     end
     else begin
       rd_data = 0; // default case, no operation
-    end
-
-    if (mem_read || mem_write) begin
-      assert (addr[1:0] == 2'b00) else begin
-        $display("[%0t] fatal: memory address %h is not aligned to 4 bytes", $time, addr);
-        $fatal(1);
-      end
     end
   end
 

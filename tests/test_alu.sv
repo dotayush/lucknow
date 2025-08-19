@@ -48,7 +48,7 @@ module test_alu;
     repeat (1000) begin
       a = {$random};
       b = {$random};
-      alu_op = isa_shared::ALU_ADD; // addition operation
+      alu_op = ALU_ADD; // addition operation
 
       #1; // wait for result
 
