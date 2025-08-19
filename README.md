@@ -1,7 +1,8 @@
-### unknown.
+### lucknow.
 
-a risc-v core with a 32-bit instruction set implementing
-the rv32i specification written in verilog.
+"lucknow." is an open source, risc-v core implementing
+the rv32i specification (as i understand it) written in
+system verilog.
 
 ### features.
 
