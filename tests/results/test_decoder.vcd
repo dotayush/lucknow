@@ -1,5 +1,5 @@
 $date
-	Tue Aug 19 11:34:18 2025
+	Wed Aug 20 03:11:17 2025
 $end
 $version
 	Icarus Verilog
@@ -8,29 +8,37 @@ $timescale
 	1ps
 $end
 $scope module test_decoder $end
-$var wire 5 ! rs2 [4:0] $end
-$var wire 5 " rs1 [4:0] $end
-$var wire 1 # reg_write $end
-$var wire 5 $ rd [4:0] $end
-$var wire 1 % mem_write $end
-$var wire 1 & mem_read $end
-$var wire 3 ' imm_op [2:0] $end
-$var wire 3 ( alu_op [2:0] $end
-$var parameter 32 ) DATA_WIDTH $end
-$var reg 32 * instruction [31:0] $end
-$var reg 1 + test_failed $end
+$var wire 32 ! unextended_data [31:0] $end
+$var wire 3 " sx_op2 [2:0] $end
+$var wire 3 # sx_op [2:0] $end
+$var wire 5 $ rs2 [4:0] $end
+$var wire 5 % rs1 [4:0] $end
+$var wire 1 & reg_write $end
+$var wire 5 ' rd [4:0] $end
+$var wire 1 ( mem_write $end
+$var wire 1 ) mem_read $end
+$var wire 7 * f7 [6:0] $end
+$var wire 3 + f3 [2:0] $end
+$var wire 3 , alu_op [2:0] $end
+$var parameter 32 - DATA_WIDTH $end
+$var reg 32 . instruction [31:0] $end
+$var reg 1 / test_failed $end
 $scope module dut $end
-$var wire 32 , instruction [31:0] $end
-$var wire 7 - inst_op [6:0] $end
-$var parameter 32 . DATA_WIDTH $end
-$var reg 3 / alu_op [2:0] $end
-$var reg 3 0 imm_op [2:0] $end
-$var reg 1 & mem_read $end
-$var reg 1 % mem_write $end
-$var reg 5 1 rd [4:0] $end
-$var reg 1 # reg_write $end
-$var reg 5 2 rs1 [4:0] $end
-$var reg 5 3 rs2 [4:0] $end
+$var wire 32 0 instruction [31:0] $end
+$var wire 7 1 inst_op [6:0] $end
+$var parameter 32 2 DATA_WIDTH $end
+$var reg 3 3 alu_op [2:0] $end
+$var reg 3 4 f3 [2:0] $end
+$var reg 7 5 f7 [6:0] $end
+$var reg 1 ) mem_read $end
+$var reg 1 ( mem_write $end
+$var reg 5 6 rd [4:0] $end
+$var reg 1 & reg_write $end
+$var reg 5 7 rs1 [4:0] $end
+$var reg 5 8 rs2 [4:0] $end
+$var reg 3 9 sx_op [2:0] $end
+$var reg 3 : sx_op2 [2:0] $end
+$var reg 32 ; unextended_data [31:0] $end
 $upscope $end
 $scope task finish $end
 $upscope $end
@@ -38,45 +46,57 @@ $upscope $end
 $enddefinitions $end
 $comment Show the parameter values. $end
 $dumpall
-b100000 .
-b100000 )
+b100000 2
+b100000 -
 $end
 #0
 $dumpvars
+b0 ;
+b1 :
+b0 9
+b0 8
+b10101 7
+b10101 6
+b0 5
+b10 4
 b0 3
-b10101 2
-b10101 1
-b0 0
-b0 /
-b11 -
-b10101010101010000011 ,
-x+
-b10101010101010000011 *
-b0 (
-b0 '
+b11 1
+b10101010101010000011 0
+x/
+b10101010101010000011 .
+b0 ,
+b10 +
+b0 *
+1)
+0(
+b10101 '
 1&
-0%
-b10101 $
-1#
-b10101 "
+b10101 %
+b0 $
+b0 #
+b1 "
 b0 !
 $end
 #1000
-b0 $
-b0 1
-b0 "
-b0 2
+b0 +
+b0 4
+b0 '
+b0 6
+b0 %
+b0 7
+0)
 0&
-0#
-b111 '
-b111 0
-b111 (
-b111 /
-b1111111 -
-b11111111111111111111111111111111 *
-b11111111111111111111111111111111 ,
+b111 "
+b111 :
+b111 #
+b111 9
+b111 ,
+b111 3
+b1111111 1
+b11111111111111111111111111111111 .
+b11111111111111111111111111111111 0
 #2000
-b0 -
-b0 *
-b0 ,
+b0 1
+b0 .
+b0 0
 #3000

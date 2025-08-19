@@ -19,7 +19,7 @@ module test_signext;
   endtask
 
   // dut io
-  reg [DATA_WIDTH-1:0] instruction;
+  reg [DATA_WIDTH-1:0] unextended_data;
   reg [2:0] sx_op;
   wire [DATA_WIDTH-1:0] sign_extended_data;
 
@@ -27,7 +27,7 @@ module test_signext;
   signext #(
     .DATA_WIDTH(DATA_WIDTH)
   ) dut (
-    .instruction(instruction),
+    .unextended_data(unextended_data),
     .sx_op(sx_op),
     .sign_extended_data(sign_extended_data)
   );
@@ -40,8 +40,8 @@ module test_signext;
     sx_op = isa_shared::SX_1100;
 
     repeat (1000) begin
-      instruction = {$random};
-      expected_immediate = {{(DATA_WIDTH-12){instruction[31]}}, instruction[31:20]};
+      unextended_data = {$random};
+      expected_immediate = {{(DATA_WIDTH-12){unextended_data[11]}}, unextended_data[11:0]};
       #1; // wait for sign_extended_data to be updated
       if (sign_extended_data !== expected_immediate) begin
         test_failed = 1;
@@ -49,15 +49,6 @@ module test_signext;
       end else begin
         $display("[%0t] OK: 0b%b", $time, sign_extended_data);
       end
-    end
-
-    instruction = 25'b000000000000_10101_010_10101; // [24:13] = 0x000 (zero immediate)
-    #1;
-    if (sign_extended_data !== 32'h00000000) begin
-      test_failed = 1;
-      $display("[%0t] error: expected 0x%h, got 0x%h", $time, 32'h00000000, sign_extended_data);
-    end else begin
-      $display("[%0t] OK: 0x%h", $time, sign_extended_data);
     end
 
     finish; // End simulation
