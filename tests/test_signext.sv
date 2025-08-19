@@ -20,7 +20,7 @@ module test_signext;
 
   // dut io
   reg [DATA_WIDTH-1:0] instruction;
-  reg [2:0] imm_op;
+  reg [2:0] sx_op;
   wire [DATA_WIDTH-1:0] sign_extended_data;
 
   // dut instantiation
@@ -28,7 +28,7 @@ module test_signext;
     .DATA_WIDTH(DATA_WIDTH)
   ) dut (
     .instruction(instruction),
-    .imm_op(imm_op),
+    .sx_op(sx_op),
     .sign_extended_data(sign_extended_data)
   );
 
@@ -37,7 +37,7 @@ module test_signext;
     $dumpfile("./tests/results/test_signext.vcd");
     $dumpvars(0, test_signext);
 
-    imm_op = isa_shared::IMM_3120;
+    sx_op = isa_shared::SX_1100;
 
     repeat (1000) begin
       instruction = {$random};

@@ -4,21 +4,18 @@
 `endif
 
 module signext #(parameter DATA_WIDTH = 32) (
-    input wire [DATA_WIDTH-1:0] instruction,
-    input wire [2:0] imm_op,
+    input logic [DATA_WIDTH-1:0] unextended_data, // '0 || whatever bits = 32 bits which can then be extracted
+    input logic [2:0] sx_op,
 
-    output reg [DATA_WIDTH-1:0] sign_extended_data
+    output logic [DATA_WIDTH-1:0] sign_extended_data
 );
-  reg [11:0] extracted_immediate;
 
   always @* begin
-    case (imm_op)
-      IMM_3120: extracted_immediate = instruction[31:20]; // extract immediate from 31:20 bits of raw instruction = 24:13 bits of minus opcode instruction
-      default: extracted_immediate = '0;
+    case (sx_op)
+      SX_1100: sign_extended_data = {{(DATA_WIDTH-$bits(unextended_data)){unextended_data[11]}}, unextended_data[11:0]};
+      SX_3100: sign_extended_data = unextended_data; // since unextended_data [31:0] = sign_extended_data
+      default: sign_extended_data = '0;
     endcase
-
-    // (32-12 = 20) repeat 11th bit + [11:0]imm => 32 bits
-    sign_extended_data = {{(DATA_WIDTH-$bits(extracted_immediate)){extracted_immediate[11]}}, extracted_immediate};
   end
 
 
