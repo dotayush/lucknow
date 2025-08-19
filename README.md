@@ -38,7 +38,7 @@ write_json control_design.json # write a json netlist (processing by other tools
 show -format dot -prefix control_design # write a dot for graphviz
 ```
 
-### post processing.
+### visualization.
 
 ```bash
 # if you've generated the dot file, you can visualize it with graphviz
