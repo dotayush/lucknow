@@ -1,5 +1,6 @@
 `ifndef ISA_SHARED_IMPORT
-import isa_shared::*;
+  `define ISA_SHARED_IMPORT
+  import isa_shared::*;
 `endif
 
 module alu #(parameter DATA_WIDTH = 32) (
