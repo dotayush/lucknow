@@ -9,7 +9,10 @@ system verilog.
 - minimalisitic core.
 - single cycle instruction execution.
 
-### iverilog compile & simulation via oss-cad-suite.
+### icarus processing.
+
+> the following requires tools available in the
+> [oss-cad-suite](https://github.com/YosysHQ/oss-cad-suite-build?tab=readme-ov-file#installation)
 
 ```bash
 
