@@ -43,14 +43,14 @@ module decoder #(parameter DATA_WIDTH = 32) (
         rd = instruction[11:7];
         unextended_data = instruction[31:20];
         f3 = instruction[14:12];
+        alu_op = ALU_ADD;
+        mem_write = 0;
+        reg_write = 1;
+        mem_read = 1;
         case (f3) // funct3
-          I_LW: begin // lw
-            alu_op = ALU_ADD;
-            mem_write = 0;
-            reg_write = 1;
-            mem_read = 1;
-            sx_op2 = SX_3100;
-          end
+          I_LW: sx_op2 = SX_3100;
+          I_LH: sx_op2 = SX_1500;
+          I_LB: sx_op2 = SX_0700;
           default: begin
           end
         endcase

@@ -79,6 +79,8 @@ module control #(parameter DATA_WIDTH = 32) (
       addr = alu_result; // memory_address = alu_a + alu_b
       case (f3)
         I_LW: unextended_data2 = data_out;
+        I_LH: unextended_data2 = data_out;
+        I_LB: unextended_data2 = data_out;
         default: unextended_data2 = '0; // default case, no operation
       endcase
       rd_data = unextended_data2;

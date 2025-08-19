@@ -13,7 +13,9 @@ module signext #(parameter DATA_WIDTH = 32) (
   always @* begin
     case (sx_op)
       SX_1100: sign_extended_data = {{(DATA_WIDTH-1-11){unextended_data[11]}}, unextended_data[11:0]};
-      SX_3100: sign_extended_data = unextended_data; // since unextended_data [31:0] = sign_extended_data
+      SX_3100: sign_extended_data = unextended_data; // since unextended_data [31:0] = sign_extended_data [31:0]
+      SX_1500: sign_extended_data = {{(DATA_WIDTH-1-15){unextended_data[15]}}, unextended_data[15:0]};
+      SX_0700: sign_extended_data = {{(DATA_WIDTH-1-7){unextended_data[7]}}, unextended_data[7:0]};
       default: sign_extended_data = '0;
     endcase
   end
