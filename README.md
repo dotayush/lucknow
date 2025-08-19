@@ -47,6 +47,7 @@ dot -Tsvg control_design.dot -o control_design_dot.svg
 # first to simplify the module naming before using it with other visualization tools
 python pp_json.py
 netlistsvg control_design.json -o control_design.svg # example of json netlist usage with another visualization tool
+```
 
 ### license.
 
