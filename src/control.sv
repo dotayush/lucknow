@@ -3,7 +3,7 @@
   import isa_shared::*;
 `endif
 
-module control #(parameter DATA_WIDTH = 32) (
+module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
     input wire clk,
     input wire rst_n
 );
@@ -30,6 +30,7 @@ module control #(parameter DATA_WIDTH = 32) (
   wire [$clog2(DATA_WIDTH)-1:0] rs1;
   wire [$clog2(DATA_WIDTH)-1:0] rs2;
   wire [$clog2(DATA_WIDTH)-1:0] rd;
+  wire [1:0] mem_access_type;
 
   reg [DATA_WIDTH-1:0] addr;
   reg [DATA_WIDTH-1:0] data_in;
@@ -45,7 +46,9 @@ module control #(parameter DATA_WIDTH = 32) (
   logic [DATA_WIDTH-1:0] sign_extended_data;
   logic [DATA_WIDTH-1:0] sign_extended_data2;
 
-    // State machine for control logic
+  localparam int ADDR_WIDTH = $clog2(WORDS);
+
+  // state machine for control logic
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       pc <= 0;
@@ -77,12 +80,18 @@ module control #(parameter DATA_WIDTH = 32) (
       alu_a = rs1_data; // rs1 is set by decoeder, so rs1_data = register_mem[rs1]
       alu_b = (sx_op != SX_NOP) ? sign_extended_data : rs2_data; // rs2 is set by decoder, so rs2_data = register_mem[rs2]
       addr = alu_result; // memory_address = alu_a + alu_b
+
+      // might be redundant, but just to be sure; use this block as a post
+      // processor before final result.
       case (f3)
         I_LW: unextended_data2 = data_out;
         I_LH: unextended_data2 = data_out;
         I_LB: unextended_data2 = data_out;
+        I_LBU: unextended_data2 = data_out;
+        I_LHU: unextended_data2 = data_out;
         default: unextended_data2 = '0; // default case, no operation
       endcase
+
       rd_data = unextended_data2;
     end
     else rd_data = 0; // default case, no operation
@@ -118,30 +127,37 @@ module control #(parameter DATA_WIDTH = 32) (
     .rs1(rs1),
     .rs2(rs2),
     .rd(rd),
-    .unextended_data(unextended_data)
+    .unextended_data(unextended_data),
+    .mem_access_type(mem_access_type)
   );
 
   // data memory (ram)
   memory #(
-    .DATA_WIDTH(DATA_WIDTH)
+    .DATA_WIDTH(DATA_WIDTH),
+    .WORDS(WORDS)
   ) data_memory_inst (
     .clk(clk),
     .addr(addr),
     .data_in(data_in),
+    .mem_read(mem_read),
     .mem_write(mem_write),
-    .data_out(data_out)
+    .data_out(data_out),
+    .mem_access_type(mem_access_type) // Use the access type from decoder
   );
 
   // instruction memory (rom)
   memory #(
     .DATA_WIDTH(DATA_WIDTH),
-    .MEM_INIT("./memory/test_rom.hex")
+    .MEM_INIT("./memory/test_rom.hex"),
+    .WORDS(WORDS)
   ) instruction_memory_inst (
     .clk(clk),
     .addr(pc),
     .data_in(0), // No write to instruction memory
+    .mem_read('1), // Always read from instruction memory
     .mem_write('0), // No write to instruction memory
-    .data_out(instruction)
+    .data_out(instruction),
+    .mem_access_type(isa_shared::WORD_MEM_ACCESS)
   );
 
   // register file

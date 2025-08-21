@@ -1,68 +1,95 @@
-module memory #(parameter WORDS = 64, DATA_WIDTH = 32, MEM_INIT = "") (
-    input wire clk,
-    input wire rst_n,
+`ifndef ISA_SHARED_IMPORT
+  `define ISA_SHARED_IMPORT
+  import isa_shared::*;
+`endif
 
-    // read
-    input wire [DATA_WIDTH-1:0] addr,
-    output reg [DATA_WIDTH-1:0] data_out,
-
-    // write
-    input wire [DATA_WIDTH-1:0] data_in,
-    input wire mem_write
-
-    // exception
-
+module memory #(
+  parameter int WORDS = 64,
+  parameter int DATA_WIDTH = 32,
+  parameter string MEM_INIT = ""
+)(
+  input  wire                     clk,
+  input  wire                     rst_n,
+  input  wire                     mem_write,
+  input  wire                     mem_read,
+  input  wire [1:0]               mem_access_type,
+  input  wire [DATA_WIDTH-1:0]    addr,
+  input  wire [DATA_WIDTH-1:0]    data_in,
+  output reg  [DATA_WIDTH-1:0]    data_out
 );
-    reg [DATA_WIDTH-1:0] mem [0:WORDS-1]; // array
 
-    initial begin
-        if (MEM_INIT != "") begin
-            $readmemh(MEM_INIT, mem); // load memory from file if specified
+  localparam int ADDR_WIDTH = $clog2(WORDS);
+
+  reg [DATA_WIDTH-1:0] mem [0:WORDS-1];
+  reg mem_aligned;
+
+  integer i;
+  initial begin
+    if (MEM_INIT != "") begin
+      $readmemh(MEM_INIT, mem);
+    end
+    else begin
+      for (i = 0; i < WORDS; i = i + 1) mem[i] = '0;
+    end
+    mem_aligned = 1'b1;
+  end
+
+  always @(posedge clk) begin
+    if (!rst_n) begin
+      for (i = 0; i < WORDS; i = i + 1) mem[i] <= '0;
+    end
+    else if (mem_write) begin
+      // compute truncated physical address and OOB
+      reg [DATA_WIDTH-1:0] paddr_w;
+      reg                 oob_w;
+      paddr_w = {{(DATA_WIDTH-ADDR_WIDTH){1'b0}}, addr[ADDR_WIDTH-1:0]};
+      oob_w   = (addr[DATA_WIDTH-1:2] >= WORDS);
+
+      if (oob_w) begin
+        $strobe("[%0t] error (write): addr=%h out of bounds, wrapping=%h, mem_access_type=%b", $time, addr, paddr_w, mem_access_type);
+        mem[paddr_w[DATA_WIDTH-1:2]] <= data_in;
+      end
+      else begin
+        if (!mem_aligned) begin
+          $strobe("[%0t] error (write): addr=%h not aligned, mem_access_type=%b", $time, addr, mem_access_type);
         end
         else begin
-            for (int i = 0; i < WORDS; i = i + 1) begin
-                mem[i] = '0; // initialize memory to zero
-            end
-        end
-    end
-
-    always @(posedge clk) begin
-      if (!rst_n) begin // pull low for reset
-        for (int i = 0; i < WORDS; i = i + 1) begin
-          mem[i] <= '0; // reset to zero
+          mem[addr[DATA_WIDTH-1:2]] <= data_in;
         end
       end
-      else if (mem_write) begin
-          // system has 32-bit words, each word is 4 bytes
-          // and the memory is byte aligned. even though the
-          // address space is 2^32 bits, we only use 64 words/bytes.
-          // this means the address space usable has
-          // address only from 0x00_00_00_00 (0) to 0x00_00_00_3F (63) instead
-          // of the full 32-bit address space of
-          // 0x00_00_00_00 (0) to 0xFF_FF_FF_FF (4,294,967,295).
+    end
+  end
 
-          if (addr[1:0] != 2'b00) begin // check if address is aligned to 4 bytes
-            $display("[%0t] error: address %h is not aligned to 4 bytes", $time, addr);
-            // TODO: implement trap
-          end
-          else if (addr[DATA_WIDTH-1:2] >= WORDS) begin // check if address is within bounds
-            $display("[%0t] error: address %h is out of bounds", $time, addr);
-            // TODO: implement trap
-          end
-          else mem[addr[DATA_WIDTH-1:2]] <= data_in; // write data to memory
+  always @* begin
+    case (mem_access_type)
+      2'b10: mem_aligned = (addr[1:0] == 2'b00); // word
+      2'b01: mem_aligned = (addr[0]   == 1'b0 ); // half
+      default: mem_aligned = 1'b1;               // byte & default
+    endcase
+
+    data_out = '0;
+    if (!mem_read) begin
+    end
+    else begin
+      reg [DATA_WIDTH-1:0] paddr_r;
+      reg                 oob_r;
+      paddr_r = {{(DATA_WIDTH-ADDR_WIDTH){1'b0}}, addr[ADDR_WIDTH-1:0]};
+      oob_r   = (addr[DATA_WIDTH-1:2] >= WORDS);
+
+      if (oob_r) begin
+        $strobe("[%0t] error (read): addr=%h out of bounds, wrapping=%h, mem_access_type=%b", $time, addr, paddr_r, mem_access_type);
+        data_out = mem[paddr_r[DATA_WIDTH-1:2]];
+      end
+      else begin
+        if (!mem_aligned) begin
+          $strobe("[%0t] error (read): addr=%h not aligned, mem_access_type=%b", $time, addr, mem_access_type);
+          data_out = '0;
+        end
+        else begin
+          data_out = mem[addr[DATA_WIDTH-1:2]];
+        end
       end
     end
-
-    always @* begin
-       if (addr[1:0] != 2'b00) begin
-          $display("[%0t] error: address %h is not aligned to 4 bytes", $time, addr);
-          data_out = '0; // return zero if address is not aligned
-       end
-       else if (addr[DATA_WIDTH-1:2] >= WORDS) begin
-          $display("[%0t] error: address %h is out of bounds", $time, addr);
-          data_out = '0; // return zero if address is out of bounds
-       end
-       else data_out = mem[addr[DATA_WIDTH-1:2]]; // read data from memory
-    end
+  end
 
 endmodule

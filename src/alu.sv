@@ -21,6 +21,12 @@ module alu #(parameter DATA_WIDTH = 32) (
     endcase
   end
 
-  assign zero = (result == 0);
+  always @* begin
+    // Calculate flags
+    zero = (result == 0);
+    carry = '0;
+    overflow = '0;
+  end
+
 
 endmodule

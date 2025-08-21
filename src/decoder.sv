@@ -17,7 +17,8 @@ module decoder #(parameter DATA_WIDTH = 32) (
     output reg [$clog2(DATA_WIDTH)-1:0] rs1,
     output reg [$clog2(DATA_WIDTH)-1:0] rs2,
     output reg [$clog2(DATA_WIDTH)-1:0] rd,
-    output logic [DATA_WIDTH-1:0] unextended_data
+    output logic [DATA_WIDTH-1:0] unextended_data,
+    output reg [1:0] mem_access_type
 );
 
   wire [6:0] inst_op; // opcode present in raw instruction
@@ -48,9 +49,26 @@ module decoder #(parameter DATA_WIDTH = 32) (
         reg_write = 1;
         mem_read = 1;
         case (f3) // funct3
-          I_LW: sx_op2 = SX_3100;
-          I_LH: sx_op2 = SX_1500;
-          I_LB: sx_op2 = SX_0700;
+          I_LW: begin
+            sx_op2 = SX_3100;
+            mem_access_type = WORD_MEM_ACCESS;
+          end
+          I_LH: begin
+            sx_op2 = SX_1500;
+            mem_access_type = HALF_MEM_ACCESS;
+          end
+          I_LB: begin
+            sx_op2 = SX_0700;
+            mem_access_type = BYTE_MEM_ACCESS;
+          end
+          I_LBU: begin
+            sx_op2 = SXU_0700;
+            mem_access_type = BYTE_MEM_ACCESS;
+          end
+          I_LHU: begin
+            sx_op2 = SXU_1500;
+            mem_access_type = HALF_MEM_ACCESS;
+          end
           default: begin
           end
         endcase
