@@ -70,6 +70,7 @@ module decoder #(parameter DATA_WIDTH = 32) (
         rs1 = instruction[19:15];
         rd = instruction[11:7];
         f3 = instruction[14:12];
+        reg_write = 1;
       end
       default: begin
       end
