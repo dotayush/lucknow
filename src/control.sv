@@ -10,6 +10,7 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
 
   // central
   reg [DATA_WIDTH-1:0] pc;
+  reg [DATA_WIDTH-1:0] next_pc;
   wire [DATA_WIDTH-1:0] instruction;
 
   reg [DATA_WIDTH-1:0] alu_a;
@@ -24,6 +25,7 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
   wire [2:0] alu_op;
   logic [2:0] sx_op;
   reg [2:0] sx_op2;
+  wire [6:0] opcode;
   wire mem_write;
   wire reg_write;
   wire mem_read;
@@ -56,8 +58,10 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
       alu_b <= 0;
       addr <= 0;
       data_in <= 0;
+      next_pc <= 4;
     end else begin
-      pc <= pc + 4; // increment PC by instruction size (assuming 4 bytes)
+      pc <= next_pc;
+      next_pc <= next_pc + 4; // increment PC by 4 for next instruction
     end
   end
 
@@ -68,7 +72,7 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
     * is_load  => reg_write=1, mem_write=0, mem_read = 1, rd_data=data_out
     */
     if (!reg_write && mem_write && !mem_read) begin
-      // data_memory[rs1_data + sign_extend(immediate)] = sign_extended(rs2_data);
+      // STORE operations => data_memory[rs1_data + sign_extend(immediate)] = sign_extended(rs2_data);
       alu_a = rs1_data; // rs1 is set by decoder, so rs1_data = register_mem[rs1]
       alu_b = sign_extended_data;
       addr = alu_result; // memory_address = alu_a + alu_b
@@ -93,10 +97,30 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
 
   end
     else if (reg_write && !mem_write && !mem_read) begin
-      rd_data = alu_result; // ALU operation, write result back to register file
+      // neither load nor store operations.
+      case (opcode)
+        JAL: begin
+          rd_data = pc + 4; // JAL writes the next PC value to rd
+          next_pc = pc + sign_extended_data;
+        end
+        JALR: begin
+          alu_a = rs1_data;
+          alu_b = sign_extended_data;
+          rd_data = pc + 4;
+          next_pc = alu_result & ~32'd1; // JALR requires the least significant bit to be zero
+        end
+        default: begin
+          if(next_pc[1:0] != 2'b00) begin
+            $display("[%0t] error: next_pc %h is not aligned to 4 bytes", $time, next_pc);
+            // TODO: implement trap
+          end
+          rd_data = alu_result;
+        end
+      endcase
+
     end
     else if (reg_write && !mem_write && mem_read) begin
-      // rd_data = data_memory[rs1_data + sign_extended(immediate)];
+      // LOAD operations => rd_data = data_memory[rs1_data + sign_extended(immediate)];
       alu_a = rs1_data; // rs1 is set by decoeder, so rs1_data = register_mem[rs1]
       alu_b = sign_extended_data; //
       addr = alu_result; // memory_address = alu_a + alu_b
@@ -158,6 +182,7 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
     .f7(f7),
     .alu_op(alu_op),
     .sx_op(sx_op),
+    .opcode(opcode),
     .mem_write(mem_write),
     .reg_write(reg_write),
     .mem_read(mem_read),

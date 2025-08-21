@@ -10,6 +10,7 @@ module decoder #(parameter DATA_WIDTH = 32) (
     output reg [6:0] f7,
     output reg [2:0] alu_op,
     output logic [2:0] sx_op,
+    output reg [6:0] opcode,
     output reg mem_write,
     output reg reg_write,
     output reg mem_read,
@@ -34,19 +35,19 @@ module decoder #(parameter DATA_WIDTH = 32) (
     f3 = '0;
     f7 = '0;
     unextended_data = '0;
+    opcode = instruction[6:0];
     case (inst_op)
-      7'b0000011: begin // memory load instructions
+      LOAD: begin // memory load instructions
         alu_op = ALU_ADD;
         sx_op = SX_1100;
         unextended_data = instruction[31:20];
         rs1 = instruction[19:15];
         rd = instruction[11:7];
         f3 = instruction[14:12];
-        mem_write = 0;
         reg_write = 1;
         mem_read = 1;
       end
-      7'b0100011: begin
+      STORE: begin
         alu_op = ALU_ADD;
         sx_op = SX_1100;
         unextended_data = {{(DATA_WIDTH-1-11){1'b0}},instruction[31:25], instruction[11:7]}; // 31 - 11 * zeros + 7 bits from instruction[31:25] + 5 bits from instruction[11:7]
@@ -54,8 +55,21 @@ module decoder #(parameter DATA_WIDTH = 32) (
         rs2 = instruction[24:20];
         f3 = instruction[14:12];
         mem_write = 1;
-        reg_write = 0;
-        mem_read = 0;
+      end
+      JAL: begin
+        alu_op = ALU_ADD;
+        sx_op = SX_2000;
+        unextended_data = {instruction[31], instruction[19:12], instruction[20], instruction[30:21], 1'b0}; // 1 + 8 + 1 + 10
+        rd = instruction[11:7];
+        reg_write = 1;
+      end
+      JALR: begin
+        alu_op = ALU_ADD;
+        sx_op = SX_1100;
+        unextended_data = instruction[31:20];
+        rs1 = instruction[19:15];
+        rd = instruction[11:7];
+        f3 = instruction[14:12];
       end
       default: begin
       end

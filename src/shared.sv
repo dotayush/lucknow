@@ -12,6 +12,7 @@ package isa_shared;
     SX_0700 = 3'b011, // 8 bits sign extension
     SXU_0700 = 3'b100, // 8 bits unsigned extension
     SXU_1500 = 3'b101, // 16 bits unsigned extension
+    SX_2000  = 3'b110, // 20 bits sign extension
     SX_NOP = 3'b111 // No Operation
   } sx_ops_e;
 
@@ -28,6 +29,13 @@ package isa_shared;
     S_SH = 3'b001, // S-Store_Halfword
     S_SB = 3'b000 // S-Store_Byte
   } s_function3_e;
+
+  typedef enum logic [6:0] {
+    LOAD = 7'b0000011, // Load instructions
+    STORE = 7'b0100011, // Store instructions
+    JAL = 7'b1101111, // Jump and Link
+    JALR = 7'b1100111 // Jump and Link Register
+  } opcode_e;
 
   typedef enum logic [1:0] {
     BYTE_MEM_ACCESS = 2'b00, // Byte access

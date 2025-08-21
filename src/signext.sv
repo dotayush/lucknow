@@ -19,6 +19,7 @@ module signext #(parameter DATA_WIDTH = 32) (
       SX_0700: sign_extended_data = {{(DATA_WIDTH-1-7){unextended_data[7]}}, unextended_data[7:0]}; //
       SX_1500: sign_extended_data = {{(DATA_WIDTH-1-15){unextended_data[15]}}, unextended_data[15:0]}; // half-word
       SX_3100: sign_extended_data = unextended_data; // word
+      SX_2000: sign_extended_data = {{(DATA_WIDTH-1-20){unextended_data[20]}}, unextended_data[20:0]}; // double-word
 
       // unsigned extensions
       SXU_0700: sign_extended_data = {{(DATA_WIDTH-1-7){1'b0}}, unextended_data[7:0]}; // byte
