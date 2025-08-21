@@ -57,8 +57,7 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
       addr <= 0;
       data_in <= 0;
     end else begin
-      // Control logic goes here (simplified example)
-      pc <= pc + 4; // Increment PC by instruction size (assuming 4 bytes)
+      pc <= pc + 4; // increment PC by instruction size (assuming 4 bytes)
     end
   end
 
@@ -69,45 +68,59 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
     * is_load  => reg_write=1, mem_write=0, mem_read = 1, rd_data=data_out
     */
     if (!reg_write && mem_write && !mem_read) begin
-      rd_data = 0; // store instruction, no data to write back to register file
-    end
+      // data_memory[rs1_data + sign_extend(immediate)] = sign_extended(rs2_data);
+      alu_a = rs1_data; // rs1 is set by decoder, so rs1_data = register_mem[rs1]
+      alu_b = sign_extended_data;
+      addr = alu_result; // memory_address = alu_a + alu_b
+
+      case (f3)
+        S_SW: begin
+          sx_op2 = SX_3100;
+          mem_access_type = WORD_MEM_ACCESS;
+        end
+        S_SH: begin
+          sx_op2 = SX_1500;
+          mem_access_type = HALF_MEM_ACCESS;
+        end
+        S_SB: begin
+          sx_op2 = SX_0700;
+          mem_access_type = BYTE_MEM_ACCESS;
+        end
+      endcase
+
+      unextended_data2 = rs2_data;
+      data_in = sign_extended_data2; // data to write to memory
+
+  end
     else if (reg_write && !mem_write && !mem_read) begin
       rd_data = alu_result; // ALU operation, write result back to register file
     end
     else if (reg_write && !mem_write && mem_read) begin
-      // rd_data = data_memory[rs1_data + sign_extended_data];
-      // alu_a must contain register mem [ rs1 ]
+      // rd_data = data_memory[rs1_data + sign_extended(immediate)];
       alu_a = rs1_data; // rs1 is set by decoeder, so rs1_data = register_mem[rs1]
-      alu_b = (sx_op != SX_NOP) ? sign_extended_data : rs2_data; // rs2 is set by decoder, so rs2_data = register_mem[rs2]
+      alu_b = sign_extended_data; //
       addr = alu_result; // memory_address = alu_a + alu_b
 
-      // might be redundant, but just to be sure; use this block as a post
-      // processor before final result.
       case (f3)
         I_LW: begin
           sx_op2 = SX_3100;
           mem_access_type = WORD_MEM_ACCESS;
-          unextended_data2 = data_out;
         end
         I_LH: begin
           sx_op2 = SX_1500;
           mem_access_type = HALF_MEM_ACCESS;
-          unextended_data2 = data_out;
         end
         I_LB: begin
           sx_op2 = SX_0700;
           mem_access_type = BYTE_MEM_ACCESS;
-          unextended_data2 = data_out;
         end
         I_LBU: begin
           sx_op2 = SXU_0700;
           mem_access_type = BYTE_MEM_ACCESS;
-          unextended_data2 = data_out;
         end
         I_LHU: begin
           sx_op2 = SXU_1500;
           mem_access_type = HALF_MEM_ACCESS;
-          unextended_data2 = data_out;
         end
         default: begin
           sx_op2 = SX_NOP; // no operation
@@ -116,7 +129,8 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
         end
       endcase
 
-      rd_data = unextended_data2;
+      unextended_data2 = data_out;
+      rd_data = sign_extended_data2;
     end
     else rd_data = 0; // default case, no operation
   end

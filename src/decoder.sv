@@ -36,15 +36,26 @@ module decoder #(parameter DATA_WIDTH = 32) (
     unextended_data = '0;
     case (inst_op)
       7'b0000011: begin // memory load instructions
+        alu_op = ALU_ADD;
         sx_op = SX_1100;
+        unextended_data = instruction[31:20];
         rs1 = instruction[19:15];
         rd = instruction[11:7];
-        unextended_data = instruction[31:20];
         f3 = instruction[14:12];
-        alu_op = ALU_ADD;
         mem_write = 0;
         reg_write = 1;
         mem_read = 1;
+      end
+      7'b0100011: begin
+        alu_op = ALU_ADD;
+        sx_op = SX_1100;
+        unextended_data = {{(DATA_WIDTH-1-11){1'b0}},instruction[31:25], instruction[11:7]}; // 31 - 11 * zeros + 7 bits from instruction[31:25] + 5 bits from instruction[11:7]
+        rs1 = instruction[19:15];
+        rs2 = instruction[24:20];
+        f3 = instruction[14:12];
+        mem_write = 1;
+        reg_write = 0;
+        mem_read = 0;
       end
       default: begin
       end
