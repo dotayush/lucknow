@@ -60,8 +60,9 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
       data_in <= 0;
       next_pc <= 4;
     end else begin
-      pc <= next_pc;
-      next_pc <= next_pc + 4; // increment PC by 4 for next instruction
+      pc = next_pc; // warning: blocking assign, we want pc to update immediately.
+      next_pc <= next_pc + 4; // warning: non-blocking assign, we want next_pc to be updated at the end of the current clock cycle.
+      $display("[%0t] PC: %d, Next PC: %d", $time, pc, next_pc);
     end
   end
 
@@ -94,7 +95,6 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
 
       unextended_data2 = rs2_data;
       data_in = sign_extended_data2; // data to write to memory
-
   end
     else if (reg_write && !mem_write && !mem_read) begin
       // neither load nor store operations.
@@ -117,7 +117,6 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
           rd_data = alu_result;
         end
       endcase
-
     end
     else if (reg_write && !mem_write && mem_read) begin
       // LOAD operations => rd_data = data_memory[rs1_data + sign_extended(immediate)];

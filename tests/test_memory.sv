@@ -25,6 +25,8 @@ module test_memory;
   reg [DATA_WIDTH-1:0] addr;
   reg [DATA_WIDTH-1:0] data_in;
   reg mem_write;
+  reg mem_read;
+  reg [1:0] mem_access_type;
   wire [DATA_WIDTH-1:0] data_out;
 
   // dut instantiation
@@ -37,6 +39,8 @@ module test_memory;
     .addr(addr),
     .data_in(data_in),
     .mem_write(mem_write),
+    .mem_read(mem_read),
+    .mem_access_type(mem_access_type),
     .data_out(data_out)
   );
 
@@ -48,29 +52,35 @@ module test_memory;
     end
   end
 
-  task write_word(input [DATA_WIDTH-1:0] wad, input [DATA_WIDTH-1:0] wdt);
+  task write_word(input [DATA_WIDTH-1:0] wad, input [DATA_WIDTH-1:0] wdt, input [1:0] access_type);
     begin
       @(negedge clk);
       addr = wad;
       data_in = wdt;
       mem_write = 1;
+      mem_access_type = access_type;
       @(negedge clk); // wait for write to complete
       mem_write = 0;
       data_in = '0;
+      $display("[%0t] write ok: addr=0x%0h data=0x%08x, access_type=0x%h", $time, addr, wdt, access_type);
     end
   endtask
 
-  task read_word(input [DATA_WIDTH-1:0] rad, input [DATA_WIDTH-1:0] rexp);
+  task read_word(input [DATA_WIDTH-1:0] rad, input [DATA_WIDTH-1:0] rexp, input [1:0] access_type);
     begin
       @(negedge clk);
       addr = rad;
+      mem_read = 1;
+      mem_access_type = access_type;
       #1; // wait for data_out to be updated
       if (data_out !== rexp) begin
         test_failed = 1;
-        $display("[%0t] error: addr=0x%0h expected=0x%08x, got=0x%08x", $time, addr, rexp, data_out);
+        $display("[%0t] read error: addr=0x%0h expected=0x%08x, got=0x%08x, access_type=0x%h", $time, addr, rexp, data_out, access_type);
       end else begin
-        $display("[%0t] OK: addr=0x%0h data=0x%08x", $time, addr, data_out);
+        $display("[%0t] read ok: addr=0x%0h data=0x%08x, access_type=0x%h", $time, addr, data_out, access_type);
       end
+      mem_read = 0;
+      addr = '0; // reset address
     end
   endtask
 
@@ -78,31 +88,70 @@ module test_memory;
     $dumpfile("./tests/results/test_memory.vcd");
     $dumpvars(0, test_memory);
 
+    // initial state
     addr = '0;
     data_in = '0;
     mem_write = 0;
+    mem_read = 0;
+    mem_access_type = WORD_MEM_ACCESS;
 
+    // reset mem
     rst_n = 0; // pull reset low
     repeat (2) @(posedge clk); // @ second posedge clk
     rst_n = 1; // release reset
     @(posedge clk);
 
-    // read uninitialized memory
-    read_word(32'h00000010, 32'h0);
-    read_word(32'h00000000, 32'h0);
-    read_word(32'h00000008, 32'h0);
+    // read reset mem
+    read_word(32'h00000010, 32'h0, WORD_MEM_ACCESS);
+    read_word(32'h00000000, 32'h0, WORD_MEM_ACCESS);
+    read_word(32'h00000008, 32'h0, WORD_MEM_ACCESS);
+    $display("\n");
 
-    repeat (2) @(posedge clk); // rest for two clock cycles (20ns)
-
-    repeat (100) begin
+    repeat (1) @(posedge clk); // rest for two clock cycles (20ns)
+    mem_access_type = WORD_MEM_ACCESS; // set access type to WORD_MEM_ACCESS
+    repeat (5) begin
       reg [DATA_WIDTH-1:0] rs;
       reg [DATA_WIDTH-1:0] rd;
 
-      rs = {$random} & ~(8-1) & 32'h000000FF; // random & bit_not(7) = random & !...111 = random000 = byte-aligned address; then set the first 24 bits to zero to keep within the 256 bytes of memory
+      rs = {$random};
       rd = {$random};
-      write_word(rs, rd); // write random data to random address
-      read_word(rs, rd); // read back the value
+
+      $display("[%0t] writing and reading to address 0x%08x with data 0x%08x", $time, rs, rd);
+
+      write_word(rs, rd, mem_access_type); // write to memory
+      read_word(rs, rd, mem_access_type); // read from memory
     end
+    $display("\n");
+
+    mem_access_type = HALF_MEM_ACCESS; // set access type to HALF_MEM_ACCESS
+    repeat (5) begin
+      reg [DATA_WIDTH-1:0] rs;
+      reg [DATA_WIDTH-1:0] rd;
+      reg [15:0] half_data;
+
+      rs = {$random};
+      half_data = {$random};
+      rd = { {(DATA_WIDTH-1-15){1'b0}}, half_data }; // zero-extend to 32 bits
+
+      write_word(rs, rd, mem_access_type); // write to memory
+      read_word(rs, rd, mem_access_type); // read from memory
+    end
+    $display("\n");
+
+    mem_access_type = BYTE_MEM_ACCESS; // set access type to BYTE_MEM_ACCESS
+    repeat (5) begin
+      reg [DATA_WIDTH-1:0] rs;
+      reg [DATA_WIDTH-1:0] rd;
+      reg [7:0] byte_data;
+
+      rs = {$random};
+      byte_data = {$random};
+      rd = { {(DATA_WIDTH-1-7){1'b0}}, byte_data }; // zero-extend to 32 bits
+
+      write_word(rs, rd, mem_access_type); // write to memory
+      read_word(rs, rd, mem_access_type); // read from memory
+    end
+    $display("\n");
 
     repeat (2) @(posedge clk); // wait for clock edges to capture the last event.
     finish;

@@ -60,6 +60,15 @@ module test_alu;
       end
     end
 
+    alu_op = ALU_NOP;
+    #(1); // wait one time unit
+    if (result !== 0) begin
+      test_failed = 1;
+      $display("[%0t] error: expected result 0x0, got 0x%h", $time, result);
+    end else begin
+      $display("[%0t] OK: result is 0x%h", $time, result);
+    end
+
     finish; // End simulation
   end
 
