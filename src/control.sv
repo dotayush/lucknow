@@ -23,14 +23,14 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
   wire [6:0] f7;
   wire [2:0] alu_op;
   logic [2:0] sx_op;
-  logic [2:0] sx_op2;
+  reg [2:0] sx_op2;
   wire mem_write;
   wire reg_write;
   wire mem_read;
   wire [$clog2(DATA_WIDTH)-1:0] rs1;
   wire [$clog2(DATA_WIDTH)-1:0] rs2;
   wire [$clog2(DATA_WIDTH)-1:0] rd;
-  wire [1:0] mem_access_type;
+  reg [1:0] mem_access_type;
 
   reg [DATA_WIDTH-1:0] addr;
   reg [DATA_WIDTH-1:0] data_in;
@@ -84,12 +84,36 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
       // might be redundant, but just to be sure; use this block as a post
       // processor before final result.
       case (f3)
-        I_LW: unextended_data2 = data_out;
-        I_LH: unextended_data2 = data_out;
-        I_LB: unextended_data2 = data_out;
-        I_LBU: unextended_data2 = data_out;
-        I_LHU: unextended_data2 = data_out;
-        default: unextended_data2 = '0; // default case, no operation
+        I_LW: begin
+          sx_op2 = SX_3100;
+          mem_access_type = WORD_MEM_ACCESS;
+          unextended_data2 = data_out;
+        end
+        I_LH: begin
+          sx_op2 = SX_1500;
+          mem_access_type = HALF_MEM_ACCESS;
+          unextended_data2 = data_out;
+        end
+        I_LB: begin
+          sx_op2 = SX_0700;
+          mem_access_type = BYTE_MEM_ACCESS;
+          unextended_data2 = data_out;
+        end
+        I_LBU: begin
+          sx_op2 = SXU_0700;
+          mem_access_type = BYTE_MEM_ACCESS;
+          unextended_data2 = data_out;
+        end
+        I_LHU: begin
+          sx_op2 = SXU_1500;
+          mem_access_type = HALF_MEM_ACCESS;
+          unextended_data2 = data_out;
+        end
+        default: begin
+          sx_op2 = SX_NOP; // no operation
+          mem_access_type = WORD_MEM_ACCESS; // default access type
+          unextended_data2 = '0; // default case, no operation
+        end
       endcase
 
       rd_data = unextended_data2;
@@ -120,15 +144,13 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
     .f7(f7),
     .alu_op(alu_op),
     .sx_op(sx_op),
-    .sx_op2(sx_op2),
     .mem_write(mem_write),
     .reg_write(reg_write),
     .mem_read(mem_read),
     .rs1(rs1),
     .rs2(rs2),
     .rd(rd),
-    .unextended_data(unextended_data),
-    .mem_access_type(mem_access_type)
+    .unextended_data(unextended_data)
   );
 
   // data memory (ram)
