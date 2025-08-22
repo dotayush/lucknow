@@ -16,7 +16,8 @@ module decoder #(parameter DATA_WIDTH = 32) (
     output reg [$clog2(DATA_WIDTH)-1:0] rs1,
     output reg [$clog2(DATA_WIDTH)-1:0] rs2,
     output reg [$clog2(DATA_WIDTH)-1:0] rd,
-    output logic [DATA_WIDTH-1:0] unextended_data
+    output logic [DATA_WIDTH-1:0] unextended_data,
+    output reg [4:0] shift_amount
 );
 
   wire [6:0] inst_op; // opcode present in raw instruction
@@ -34,6 +35,7 @@ module decoder #(parameter DATA_WIDTH = 32) (
     f7 = '0;
     unextended_data = '0;
     opcode = instruction[6:0];
+    shift_amount = '0;
     case (inst_op)
       LOAD: begin // memory load instructions
         sx_op = SX_1100;
@@ -77,12 +79,24 @@ module decoder #(parameter DATA_WIDTH = 32) (
         f3 = instruction[14:12];
       end
       REGISTER_IMM: begin
-        sx_op = SX_1100;
-        unextended_data = instruction[31:20];
         rs1 = instruction[19:15];
         rd = instruction[11:7];
         f3 = instruction[14:12];
         reg_write = 1;
+        case (f3)
+          SH_SLLI: begin
+            f7 = instruction[31:25];
+            shift_amount = instruction[24:20];
+          end
+          SH_SRLI: begin
+            f7 = instruction[31:25];
+            shift_amount = instruction[24:20];
+          end
+          default: begin
+            unextended_data = instruction[31:20];
+            sx_op = SX_1100;
+          end
+        endcase
       end
       default: begin
       end

@@ -47,6 +47,7 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
   logic [DATA_WIDTH-1:0] unextended_data2; // not driven by decoder but by control itself.
   logic [DATA_WIDTH-1:0] sign_extended_data;
   logic [DATA_WIDTH-1:0] sign_extended_data2;
+  wire [4:0] shift_amount;
 
   localparam int ADDR_WIDTH = $clog2(WORDS);
 
@@ -156,32 +157,66 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
           endcase
         end
         REGISTER_IMM: begin
-          alu_a = rs1_data;
-          alu_b = sign_extended_data;
           case (f3)
             RI_ADDI: begin
+              alu_a = rs1_data;
+              alu_b = sign_extended_data;
               alu_op = ALU_ADD;
               rd_data = alu_result;
             end
             RI_SLTI: begin
+              alu_a = rs1_data;
+              alu_b = sign_extended_data;
               alu_op = ALU_LT;
               rd_data = alu_result;
             end
             RI_SLTIU: begin
+              alu_a = rs1_data;
+              alu_b = sign_extended_data;
               alu_op = ALU_LTU;
               rd_data = alu_result;
             end
             RI_XORI: begin
+              alu_a = rs1_data;
+              alu_b = sign_extended_data;
               alu_op = ALU_XOR;
               rd_data = alu_result;
             end
             RI_ORI: begin
+              alu_a = rs1_data;
+              alu_b = sign_extended_data;
               alu_op = ALU_OR;
               rd_data = alu_result;
             end
             RI_ANDI: begin
+              alu_a = rs1_data;
+              alu_b = sign_extended_data;
               alu_op = ALU_AND;
               rd_data = alu_result;
+            end
+            SH_SLLI: begin
+              alu_op = ALU_SLL;
+              alu_a = rs1_data;
+              alu_b = {27'b0, shift_amount}; // zero-extend shift amount to 32 bits
+              rd_data = alu_result;
+            end
+            SH_SRLI: begin
+              case (f7)
+                SH_SRLI_F7: begin
+                  alu_op = ALU_SRL;
+                  alu_a = rs1_data;
+                  alu_b = {27'b0, shift_amount}; // zero-extend shift amount to 32 bits
+                  rd_data = alu_result;
+                end
+                SH_SRAI_F7: begin
+                  alu_op = ALU_SRA;
+                  alu_a = rs1_data;
+                  alu_b = {27'b0, shift_amount}; // zero-extend shift amount to 32 bits
+                  rd_data = alu_result;
+                end
+                default: begin
+                end
+              endcase
             end
           endcase
         end
@@ -264,7 +299,8 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
     .rs1(rs1),
     .rs2(rs2),
     .rd(rd),
-    .unextended_data(unextended_data)
+    .unextended_data(unextended_data),
+    .shift_amount(shift_amount)
   );
 
   // data memory (ram)

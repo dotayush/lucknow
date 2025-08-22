@@ -15,6 +15,10 @@ package isa_shared;
     ALU_OR = 5'b01001, // OR
     ALU_AND = 5'b01010, // AND
 
+    ALU_SLL = 5'b01011, // Shift Left Logical
+    ALU_SRL = 5'b01100, // Shift Right Logical
+    ALU_SRA = 5'b01101, // Shift Right Arithmetic
+
     ALU_NOP = 5'b11111 // No Operation
   } alu_ops_e;
 
@@ -40,12 +44,19 @@ package isa_shared;
 
   typedef enum logic [2:0] {
     RI_ADDI = 3'b000, // RI-Add_Immediate
+    SH_SLLI = 3'b001, // RI-Shift_Left_Logical
     RI_SLTI = 3'b010, // RI-Set_Less_Than_Immediate
     RI_SLTIU = 3'b011, // RI-Set_Less_Than_Immediate_Unsigned
     RI_XORI = 3'b100, // RI-Xor_Immediate
+    SH_SRLI = 3'b101, // RI-Shift_Right_Logical_Immediate, RI-Shift_Right_Arithmetic
     RI_ORI = 3'b110, // RI-Or_Immediate
     RI_ANDI = 3'b111 // RI-And_Immediate
   } ri_function3_e;
+
+  typedef enum logic [6:0] {
+    SH_SRLI_F7 = 7'b0000000, // RI-Shift_Right_Logical
+    SH_SRAI_F7 = 7'b0100000 // RI-Shift_Right_Arithmetic
+  } sh_function7_e;
 
   typedef enum logic [2:0] {
     S_SW = 3'b010, // S-Store_Word

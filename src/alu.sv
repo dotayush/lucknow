@@ -59,6 +59,16 @@ module alu #(parameter DATA_WIDTH = 32) (
       ALU_LTU: result = (a < b) ? 1 : 0;
       ALU_GEU: result = (a >= b) ? 1 : 0;
 
+      ALU_SLL: begin
+        result = a << b[4:0];
+      end
+      ALU_SRL: begin
+        result = a >> b[4:0];
+      end
+      ALU_SRA: begin
+        result = $signed(a) >>> b[4:0];
+      end
+
       default: begin
         result = '0;
         overflow = 0;
