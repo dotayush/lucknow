@@ -1,13 +1,14 @@
 ### lucknow.
 
-"lucknow." is an open source, risc-v core implementing
-the rv32i specification (as i understand it) written in
-system verilog.
+"lucknow." is an open source, minimalistic risc-v core
+implementing the rv32i spec (as i understand it) written
+purely in system verilog.
 
 ### features.
 
-- minimalisitic core.
-- single cycle instruction execution.
+- minimalisitic 32-bit (RV32I) compute core
+- single cycle cpu (each instruction takes one clock cycle).
+- educational purpose (not intended for production use).
 
 ### icarus processing.
 
