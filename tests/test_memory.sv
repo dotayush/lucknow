@@ -62,7 +62,6 @@ module test_memory;
       @(negedge clk); // wait for write to complete
       mem_write = 0;
       data_in = '0;
-      $display("[%0t] write ok: addr=0x%0h data=0x%08x, access_type=0x%h", $time, addr, wdt, access_type);
     end
   endtask
 
@@ -76,8 +75,6 @@ module test_memory;
       if (data_out !== rexp) begin
         test_failed = 1;
         $display("[%0t] read error: addr=0x%0h expected=0x%08x, got=0x%08x, access_type=0x%h", $time, addr, rexp, data_out, access_type);
-      end else begin
-        $display("[%0t] read ok: addr=0x%0h data=0x%08x, access_type=0x%h", $time, addr, data_out, access_type);
       end
       mem_read = 0;
       addr = '0; // reset address
@@ -105,7 +102,6 @@ module test_memory;
     read_word(32'h00000010, 32'h0, WORD_MEM_ACCESS);
     read_word(32'h00000000, 32'h0, WORD_MEM_ACCESS);
     read_word(32'h00000008, 32'h0, WORD_MEM_ACCESS);
-    $display("\n");
 
     repeat (1) @(posedge clk); // rest for two clock cycles (20ns)
     mem_access_type = WORD_MEM_ACCESS; // set access type to WORD_MEM_ACCESS
@@ -116,12 +112,9 @@ module test_memory;
       rs = {$random};
       rd = {$random};
 
-      $display("[%0t] writing and reading to address 0x%08x with data 0x%08x", $time, rs, rd);
-
       write_word(rs, rd, mem_access_type); // write to memory
       read_word(rs, rd, mem_access_type); // read from memory
     end
-    $display("\n");
 
     mem_access_type = HALF_MEM_ACCESS; // set access type to HALF_MEM_ACCESS
     repeat (5) begin
@@ -136,7 +129,6 @@ module test_memory;
       write_word(rs, rd, mem_access_type); // write to memory
       read_word(rs, rd, mem_access_type); // read from memory
     end
-    $display("\n");
 
     mem_access_type = BYTE_MEM_ACCESS; // set access type to BYTE_MEM_ACCESS
     repeat (5) begin
@@ -151,7 +143,6 @@ module test_memory;
       write_word(rs, rd, mem_access_type); // write to memory
       read_word(rs, rd, mem_access_type); // read from memory
     end
-    $display("\n");
 
     repeat (2) @(posedge clk); // wait for clock edges to capture the last event.
     finish;

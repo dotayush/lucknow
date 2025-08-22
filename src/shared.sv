@@ -1,19 +1,30 @@
 package isa_shared;
 
-  typedef enum logic [2:0] {
-    ALU_ADD = 3'b000, // ADD
-    ALU_NOP = 3'b111 // No Operation
+  typedef enum logic [4:0] {
+    ALU_ADD = 5'b00000, // ADD
+    ALU_EQUALS = 5'b00001, // EQ
+    ALU_NOT_EQUALS = 5'b00010, // NEQ
+    ALU_SUB = 5'b00011, // SUB
+
+    // a<b signed, a>=b signed, a<b unsigned, a >=b unsigned
+    ALU_LT = 5'b00100, // LT
+    ALU_GE = 5'b00101, // GE
+    ALU_LTU = 5'b00110, // LTU
+    ALU_GEU = 5'b00111, // GEU
+
+    ALU_NOP = 5'b11111 // No Operation
   } alu_ops_e;
 
-  typedef enum logic [2:0] {
-    SX_1100 = 3'b000,  // 12 bits sign extension
-    SX_3100 = 3'b001, // 32 unsigned/signed extension
-    SX_1500 = 3'b010, // 16 bits sign extension
-    SX_0700 = 3'b011, // 8 bits sign extension
-    SXU_0700 = 3'b100, // 8 bits unsigned extension
-    SXU_1500 = 3'b101, // 16 bits unsigned extension
-    SX_2000  = 3'b110, // 20 bits sign extension
-    SX_NOP = 3'b111 // No Operation
+  typedef enum logic [4:0] {
+    SX_1100 = 5'b00000,  // 12 bits sign extension
+    SX_3100 = 5'b00001, // 32 unsigned/signed extension
+    SX_1500 = 5'b00010, // 16 bits sign extension
+    SX_0700 = 5'b00011, // 8 bits sign extension
+    SXU_0700 = 5'b00100, // 8 bits unsigned extension
+    SXU_1500 = 5'b00101, // 16 bits unsigned extension
+    SX_2000  = 5'b00110, // 21 bits sign extension
+    SX_1200 = 5'b00111, // 13 bits sign extension
+    SX_NOP = 5'b11111 // No Operation
   } sx_ops_e;
 
   typedef enum logic [2:0] {
@@ -30,11 +41,21 @@ package isa_shared;
     S_SB = 3'b000 // S-Store_Byte
   } s_function3_e;
 
+  typedef enum logic [2:0] {
+    B_BEQ = 3'b000, // B-Branch_Equal
+    B_BNE = 3'b001, // B-Branch_Not_Equal
+    B_BLT = 3'b100, // B-Branch_Less_Than
+    B_BGE = 3'b101, // B-Branch_Greater_Than_or_Equal
+    B_BLTU = 3'b110, // B-Branch_Less_Than_Unsigned
+    B_BGEU = 3'b111 // B-Branch_Greater_Than_or_Equal_Unsigned
+  } b_function3_e;
+
   typedef enum logic [6:0] {
     LOAD = 7'b0000011, // Load instructions
     STORE = 7'b0100011, // Store instructions
     JAL = 7'b1101111, // Jump and Link
-    JALR = 7'b1100111 // Jump and Link Register
+    JALR = 7'b1100111, // Jump and Link Register
+    BRANCH = 7'b1100011 // Branch instructions
   } opcode_e;
 
   typedef enum logic [1:0] {

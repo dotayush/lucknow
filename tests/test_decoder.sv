@@ -20,7 +20,7 @@ module test_decoder;
   reg [DATA_WIDTH-1:0] instruction;
   wire [2:0] f3;
   wire [6:0] f7;
-  wire [2:0] alu_op;
+  wire [4:0] alu_op;
   wire [2:0] sx_op;
   wire [6:0] opcode;
   wire mem_write;
@@ -162,6 +162,28 @@ module test_decoder;
                $time, alu_op, sx_op, opcode, mem_write, reg_write, mem_read, rs1, rs2, rd);
     end else begin
       $display("[%0t] OK: jump and link register instruction decoded correctly", $time);
+    end
+
+    // line: beq  x5,   x10,  8 | hex: 00a28463 | bin: 00000000101000101000010001100011
+    instruction = 32'b00000000101000101000010001100011; // beq x5, x10, 8
+    #1; // wait for dut to process
+    if (alu_op !== 3'b001 || sx_op !== 3'b000 || opcode !==7'b1100011 || mem_write !== 0 || reg_write !== 0 || mem_read !==0 || rs1 !== 5'b00101 || rs2 !== 5'b01010 || rd !== 5'b0) begin
+      test_failed = 1;
+      $display("[%0t] error: expected alu_op=001 (got %b), sx_op=000 (got %b), opcode=1100011 (got %b), mem_write=0 (got %b), reg_write=0 (got %b), mem_read=0 (got %b), rs1=00101 (got %b), rs2=01010 (got %b), rd=0 (got %b)",
+               $time, alu_op, sx_op, opcode, mem_write, reg_write, mem_read, rs1, rs2, rd);
+    end else begin
+      $display("[%0t] OK: branch equal instruction decoded correctly", $time);
+    end
+
+    // line: bne  x12,  x7,   -4 | hex: fe761ee3 | bin: 11111110011101100001111011100011
+    instruction = 32'b11111110011101100001111011100011; // bne x12, x7, -4
+    #1; // wait for dut to process
+    if (alu_op !== 3'b001 || sx_op !== 3'b000 || opcode !==7'b1100011 || mem_write !== 0 || reg_write !== 0 || mem_read !==0 || rs1 !== 5'b01100 || rs2 !== 5'b00111 || rd !== 5'b0) begin
+      test_failed = 1;
+      $display("[%0t] error: expected alu_op=001 (got %b), sx_op=000 (got %b), opcode=1100011 (got %b), mem_write=0 (got %b), reg_write=0 (got %b), mem_read=0 (got %b), rs1=01100 (got %b), rs2=00111 (got %b), rd=0 (got %b)",
+               $time, alu_op, sx_op, opcode, mem_write, reg_write, mem_read, rs1, rs2, rd);
+    end else begin
+      $display("[%0t] OK: branch not equal instruction decoded correctly", $time);
     end
 
     // unrecognized instructions

@@ -22,9 +22,9 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
 
   wire [2:0] f3;
   wire [6:0] f7;
-  wire [2:0] alu_op;
-  logic [2:0] sx_op;
-  reg [2:0] sx_op2;
+  reg [4:0] alu_op;
+  logic [4:0] sx_op;
+  reg [4:0] sx_op2;
   wire [6:0] opcode;
   wire mem_write;
   wire reg_write;
@@ -62,7 +62,6 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
     end else begin
       pc = next_pc; // warning: blocking assign, we want pc to update immediately.
       next_pc <= next_pc + 4; // warning: non-blocking assign, we want next_pc to be updated at the end of the current clock cycle.
-      $display("[%0t] PC: %d, Next PC: %d", $time, pc, next_pc);
     end
   end
 
@@ -74,6 +73,7 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
     */
     if (!reg_write && mem_write && !mem_read) begin
       // STORE operations => data_memory[rs1_data + sign_extend(immediate)] = sign_extended(rs2_data);
+      alu_op = ALU_ADD;
       alu_a = rs1_data; // rs1 is set by decoder, so rs1_data = register_mem[rs1]
       alu_b = sign_extended_data;
       addr = alu_result; // memory_address = alu_a + alu_b
@@ -100,14 +100,60 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
       // neither load nor store operations.
       case (opcode)
         JAL: begin
+          alu_op = ALU_ADD;
           rd_data = pc + 4; // JAL writes the next PC value to rd
           next_pc = pc + sign_extended_data;
         end
         JALR: begin
+          alu_op = ALU_ADD;
           alu_a = rs1_data;
           alu_b = sign_extended_data;
           rd_data = pc + 4;
           next_pc = alu_result & ~32'd1; // JALR requires the least significant bit to be zero
+        end
+        BRANCH: begin
+          alu_a = rs1_data;
+          alu_b = rs2_data;
+          case (f3)
+            B_BEQ: begin
+              alu_op = ALU_EQUALS;
+              if (alu_result == 1) begin
+                next_pc = pc + sign_extended_data;
+              end
+            end
+            B_BNE: begin
+              alu_op = ALU_NOT_EQUALS;
+              if (alu_result == 1) begin
+                next_pc = pc + sign_extended_data;
+              end
+            end
+            B_BLT: begin
+              alu_op = ALU_LT;
+              if (alu_result == 1) begin
+                next_pc = pc + sign_extended_data;
+              end
+            end
+            B_BGE: begin
+              alu_op = ALU_GE;
+              if (alu_result == 1) begin
+                next_pc = pc + sign_extended_data;
+              end
+            end
+            B_BLTU: begin
+              alu_op = ALU_LTU;
+              if (alu_result == 1) begin
+                next_pc = pc + sign_extended_data;
+              end
+            end
+            B_BGEU: begin
+              alu_op = ALU_GEU;
+              if (alu_result == 1) begin
+                next_pc = pc + sign_extended_data;
+              end
+            end
+            default: begin
+            end
+          endcase
         end
         default: begin
           if(next_pc[1:0] != 2'b00) begin
@@ -120,6 +166,7 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
     end
     else if (reg_write && !mem_write && mem_read) begin
       // LOAD operations => rd_data = data_memory[rs1_data + sign_extended(immediate)];
+      alu_op = ALU_ADD;
       alu_a = rs1_data; // rs1 is set by decoeder, so rs1_data = register_mem[rs1]
       alu_b = sign_extended_data; //
       addr = alu_result; // memory_address = alu_a + alu_b
@@ -179,7 +226,6 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
     .instruction(instruction),
     .f3(f3),
     .f7(f7),
-    .alu_op(alu_op),
     .sx_op(sx_op),
     .opcode(opcode),
     .mem_write(mem_write),

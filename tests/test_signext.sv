@@ -20,7 +20,7 @@ module test_signext;
 
   // dut io
   reg [DATA_WIDTH-1:0] unextended_data;
-  reg [2:0] sx_op;
+  reg [4:0] sx_op;
   wire [DATA_WIDTH-1:0] sign_extended_data;
 
   // dut instantiation
