@@ -26,6 +26,7 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
   logic [4:0] sx_op;
   reg [4:0] sx_op2;
   wire [6:0] opcode;
+  wire halt;
   wire mem_write;
   wire reg_write;
   wire mem_read;
@@ -61,8 +62,10 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
       data_in <= 0;
       next_pc <= 4;
     end else begin
-      pc = next_pc; // warning: blocking assign, we want pc to update immediately. DO NOT UPDATE PC ANYWHERE ELSE.
-      next_pc <= next_pc + 4; // warning: non-blocking assign, we want next_pc to be updated at the end of the current clock cycle.
+      if (!halt) begin
+        pc = next_pc; // warning: blocking assign, we want pc to update immediately. DO NOT UPDATE PC ANYWHERE ELSE.
+        next_pc <= next_pc + 4; // warning: non-blocking assign, we want next_pc to be updated at the end of the current clock cycle.
+      end
     end
   end
 
@@ -399,7 +402,8 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
     .rs2(rs2),
     .rd(rd),
     .unextended_data(unextended_data),
-    .shift_amount(shift_amount)
+    .shift_amount(shift_amount),
+    .halt(halt)
   );
 
   // data memory (ram)

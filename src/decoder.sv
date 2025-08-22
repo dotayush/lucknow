@@ -17,7 +17,8 @@ module decoder #(parameter DATA_WIDTH = 32) (
     output reg [$clog2(DATA_WIDTH)-1:0] rs2,
     output reg [$clog2(DATA_WIDTH)-1:0] rd,
     output logic [DATA_WIDTH-1:0] unextended_data,
-    output reg [4:0] shift_amount
+    output reg [4:0] shift_amount,
+    output reg halt
 );
 
   wire [6:0] inst_op; // opcode present in raw instruction
@@ -36,6 +37,7 @@ module decoder #(parameter DATA_WIDTH = 32) (
     unextended_data = '0;
     opcode = instruction[6:0];
     shift_amount = '0;
+    halt = 0;
     case (inst_op)
       LOAD: begin // memory load instructions
         sx_op = SX_1100;
@@ -119,7 +121,8 @@ module decoder #(parameter DATA_WIDTH = 32) (
         // cycle, so FENCE is not needed.
       end
       ECALL_BREAK: begin
-        unextended_data = instruction[31:20]; // not extending this but used to determine if it is an ECALL or EBREAK
+        unextended_data = instruction[31:20]; // not extending
+        halt = 1; // until trap is implemented, halt the core
       end
       default: begin
       end
@@ -128,6 +131,7 @@ module decoder #(parameter DATA_WIDTH = 32) (
     if (mem_write && mem_read) begin
       $display("[%0t] error: instruction %b cannot be both a memory write and read at the same time. mem_write=%b, mem_read=%b", $time, instruction, mem_write, mem_read);
       // TODO: implement TRAP
+      halt = 1;
     end
   end
 
