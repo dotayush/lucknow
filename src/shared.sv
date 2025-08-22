@@ -6,11 +6,14 @@ package isa_shared;
     ALU_NOT_EQUALS = 5'b00010, // NEQ
     ALU_SUB = 5'b00011, // SUB
 
-    // a<b signed, a>=b signed, a<b unsigned, a >=b unsigned
     ALU_LT = 5'b00100, // LT
     ALU_GE = 5'b00101, // GE
     ALU_LTU = 5'b00110, // LTU
     ALU_GEU = 5'b00111, // GEU
+
+    ALU_XOR = 5'b01000, // XOR
+    ALU_OR = 5'b01001, // OR
+    ALU_AND = 5'b01010, // AND
 
     ALU_NOP = 5'b11111 // No Operation
   } alu_ops_e;
@@ -36,6 +39,15 @@ package isa_shared;
   } i_function3_e;
 
   typedef enum logic [2:0] {
+    RI_ADDI = 3'b000, // RI-Add_Immediate
+    RI_SLTI = 3'b010, // RI-Set_Less_Than_Immediate
+    RI_SLTIU = 3'b011, // RI-Set_Less_Than_Immediate_Unsigned
+    RI_XORI = 3'b100, // RI-Xor_Immediate
+    RI_ORI = 3'b110, // RI-Or_Immediate
+    RI_ANDI = 3'b111 // RI-And_Immediate
+  } ri_function3_e;
+
+  typedef enum logic [2:0] {
     S_SW = 3'b010, // S-Store_Word
     S_SH = 3'b001, // S-Store_Halfword
     S_SB = 3'b000 // S-Store_Byte
@@ -55,7 +67,8 @@ package isa_shared;
     STORE = 7'b0100011, // Store instructions
     JAL = 7'b1101111, // Jump and Link
     JALR = 7'b1100111, // Jump and Link Register
-    BRANCH = 7'b1100011 // Branch instructions
+    BRANCH = 7'b1100011, // Branch instructions
+    REGISTER_IMM = 7'b0010011 // Register-Immediate instructions
   } opcode_e;
 
   typedef enum logic [1:0] {

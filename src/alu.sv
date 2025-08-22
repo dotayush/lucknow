@@ -38,6 +38,15 @@ module alu #(parameter DATA_WIDTH = 32) (
         result = result_ext[DATA_WIDTH-1:0];
         overflow = (a[DATA_WIDTH-1] != b[DATA_WIDTH-1]) && (result[DATA_WIDTH-1] != a[DATA_WIDTH-1]);
       end
+      ALU_XOR: begin
+        result = a ^ b;
+      end
+      ALU_OR: begin
+        result = a | b;
+      end
+      ALU_AND: begin
+        result = a & b;
+      end
 
       // bitwise operations
       ALU_EQUALS: result = (a == b) ? 1 : 0;

@@ -56,7 +56,7 @@ module decoder #(parameter DATA_WIDTH = 32) (
         sx_op = SX_2000;
         // FUCK THIS IMMEDIATE FORMATTING
         unextended_data = {instruction[31], instruction[19:12], instruction[20], instruction[30:21], 1'b0}; // 1 + 10 + 1 + 8 + 1 = 21 bits
-        $display("JAL instruction, unextended_data bits: %b", {instruction[31], instruction[30:21], instruction[20], instruction[19:12], 1'b0});
+        $display("JAL instruction, unextended_data bits: %b", {instruction[31], instruction[19:12], instruction[20], instruction[19:12], 1'b0});
         $display("instruction bits: %b", instruction);
         rd = instruction[11:7];
         reg_write = 1;
@@ -75,6 +75,14 @@ module decoder #(parameter DATA_WIDTH = 32) (
         rs1 = instruction[19:15];
         rs2 = instruction[24:20];
         f3 = instruction[14:12];
+      end
+      REGISTER_IMM: begin
+        sx_op = SX_1100;
+        unextended_data = instruction[31:20];
+        rs1 = instruction[19:15];
+        rd = instruction[11:7];
+        f3 = instruction[14:12];
+        reg_write = 1;
       end
       default: begin
       end

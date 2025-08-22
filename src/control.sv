@@ -155,6 +155,36 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
             end
           endcase
         end
+        REGISTER_IMM: begin
+          alu_a = rs1_data;
+          alu_b = sign_extended_data;
+          case (f3)
+            RI_ADDI: begin
+              alu_op = ALU_ADD;
+              rd_data = alu_result;
+            end
+            RI_SLTI: begin
+              alu_op = ALU_LT;
+              rd_data = alu_result;
+            end
+            RI_SLTIU: begin
+              alu_op = ALU_LTU;
+              rd_data = alu_result;
+            end
+            RI_XORI: begin
+              alu_op = ALU_XOR;
+              rd_data = alu_result;
+            end
+            RI_ORI: begin
+              alu_op = ALU_OR;
+              rd_data = alu_result;
+            end
+            RI_ANDI: begin
+              alu_op = ALU_AND;
+              rd_data = alu_result;
+            end
+          endcase
+        end
         default: begin
           if(next_pc[1:0] != 2'b00) begin
             $display("[%0t] error: next_pc %h is not aligned to 4 bytes", $time, next_pc);
