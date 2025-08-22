@@ -6,7 +6,7 @@
 module memory #(
   parameter int WORDS = 64,
   parameter int DATA_WIDTH = 32,
-  parameter string MEM_INIT = ""
+  parameter MEM_INIT = ""
 )(
   input  wire                     clk,
   input  wire                     rst_n,
