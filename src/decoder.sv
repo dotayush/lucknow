@@ -104,11 +104,13 @@ module decoder #(parameter DATA_WIDTH = 32) (
         rs1 = instruction[19:15];
         rs2 = instruction[24:20];
         f7 = instruction[31:25];
+        reg_write = 1;
       end
       LUI, AUIPC: begin
         rd = instruction[11:7];
         sx_op = SX_1900;
         unextended_data = instruction[31:12] << 12;
+        reg_write = 1;
       end
       default: begin
       end
