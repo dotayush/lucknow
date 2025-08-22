@@ -220,6 +220,76 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
             end
           endcase
         end
+        REGISTER: begin
+          case (f3)
+            R_ADDSUB: begin
+              alu_a = rs1_data;
+              alu_b = rs2_data;
+              case (f7)
+                R_ADD_F7: begin
+                  alu_op = ALU_ADD;
+                  rd_data = alu_result;
+                end
+                R_SUB_F7: begin
+                  alu_op = ALU_SUB;
+                  rd_data = alu_result;
+                end
+              endcase
+            end
+            R_SLL: begin
+              alu_a = rs1_data;
+              alu_b = rs2_data;
+              alu_op = ALU_SLL;
+              rd_data = alu_result;
+            end
+            R_SLT: begin
+              alu_a = rs1_data;
+              alu_b = rs2_data;
+              alu_op = ALU_LT;
+              rd_data = alu_result;
+            end
+            R_SLTU: begin
+              alu_a = rs1_data;
+              alu_b = rs2_data;
+              alu_op = ALU_LTU;
+              rd_data = alu_result;
+            end
+            R_XOR: begin
+              alu_a = rs1_data;
+              alu_b = rs2_data;
+              alu_op = ALU_XOR;
+              rd_data = alu_result;
+            end
+            R_SRL_SRA: begin
+              alu_a = rs1_data;
+              alu_b = rs2_data;
+              case (f7)
+                R_SRL_F7: begin
+                  alu_op = ALU_SRL;
+                  rd_data = alu_result;
+                end
+                R_SRA_F7: begin
+                  alu_op = ALU_SRA;
+                  rd_data = alu_result;
+                end
+                default: begin
+                end
+              endcase
+            end
+            R_OR: begin
+              alu_a = rs1_data;
+              alu_b = rs2_data;
+              alu_op = ALU_OR;
+              rd_data = alu_result;
+            end
+            R_AND: begin
+              alu_a = rs1_data;
+              alu_b = rs2_data;
+              alu_op = ALU_AND;
+              rd_data = alu_result;
+            end
+          endcase
+        end
         default: begin
           if(next_pc[1:0] != 2'b00) begin
             $display("[%0t] error: next_pc %h is not aligned to 4 bytes", $time, next_pc);

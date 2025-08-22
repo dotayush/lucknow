@@ -98,6 +98,13 @@ module decoder #(parameter DATA_WIDTH = 32) (
           end
         endcase
       end
+      REGISTER: begin
+        rd = instruction[11:7];
+        f3 = instruction[14:12];
+        rs1 = instruction[19:15];
+        rs2 = instruction[24:20];
+        f7 = instruction[31:25];
+      end
       default: begin
       end
     endcase

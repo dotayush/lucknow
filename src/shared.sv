@@ -73,13 +73,34 @@ package isa_shared;
     B_BGEU = 3'b111 // B-Branch_Greater_Than_or_Equal_Unsigned
   } b_function3_e;
 
+  typedef enum logic [2:0] {
+    R_ADDSUB = 3'b000, // R-Add_Subtract
+    R_SLL = 3'b001, // R-Shift_Left_Logical
+    R_SLT = 3'b010, // R-Set_Less_Than
+    R_SLTU = 3'b011, // R-Set_Less_Than_Unsigned
+    R_XOR = 3'b100, // R-Xor
+    R_SRL_SRA = 3'b101, // R-Shift_Right_Logical, R-Shift_Right_Arithmetic
+    R_OR = 3'b110, // R-Or
+    R_AND = 3'b111 // R-And
+  } r_function3_e;
+
+  typedef enum logic [6:0] {
+    R_ADD_F7 = 7'b0000000, // R-Add
+    R_SUB_F7 = 7'b0100000 // R-Subtract
+  } r_addsub_function7_e;
+  typedef enum logic [6:0] {
+    R_SRL_F7 = 7'b0000000, // R-Shift_Right_Logical
+    R_SRA_F7 = 7'b0100000 // R-Shift_Right_Arithmetic
+  } r_srlsra_function7_e;
+
   typedef enum logic [6:0] {
     LOAD = 7'b0000011, // Load instructions
     STORE = 7'b0100011, // Store instructions
     JAL = 7'b1101111, // Jump and Link
     JALR = 7'b1100111, // Jump and Link Register
     BRANCH = 7'b1100011, // Branch instructions
-    REGISTER_IMM = 7'b0010011 // Register-Immediate instructions
+    REGISTER_IMM = 7'b0010011, // Register-Immediate instructions
+    REGISTER = 7'b0110011 // Register-Register instructions
   } opcode_e;
 
   typedef enum logic [1:0] {
