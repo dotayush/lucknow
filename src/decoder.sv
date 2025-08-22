@@ -110,6 +110,17 @@ module decoder #(parameter DATA_WIDTH = 32) (
         unextended_data = instruction[31:12] << 12;
         reg_write = 1;
       end
+      FENCE: begin
+        // FENCE is a no-op in this implementation.
+        // It is used when synchronizing memory operations in a multi-core
+        // system, out of order execution, or memory-mapped I/O. Bascially,
+        // they must be ready to accept the next instruction. In this
+        // core, all instructions are executed in order and within a single
+        // cycle, so FENCE is not needed.
+      end
+      ECALL_BREAK: begin
+        unextended_data = instruction[31:20]; // not extending this but used to determine if it is an ECALL or EBREAK
+      end
       default: begin
       end
     endcase

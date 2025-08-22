@@ -61,13 +61,14 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
       data_in <= 0;
       next_pc <= 4;
     end else begin
-      pc = next_pc; // warning: blocking assign, we want pc to update immediately.
+      pc = next_pc; // warning: blocking assign, we want pc to update immediately. DO NOT UPDATE PC ANYWHERE ELSE.
       next_pc <= next_pc + 4; // warning: non-blocking assign, we want next_pc to be updated at the end of the current clock cycle.
     end
   end
 
   always @* begin
     /*
+    * is_system => reg_write=0, mem_write=0, mem_read = 0, rd_data=0 (branch, fence, ecall, break)
     * is_store => reg_write=0, mem_write=1, mem_read = 0, rd_data=0
     * is_alu   => reg_write=1, mem_write=0, mem_read = 0, rd_data=alu_result
     * is_load  => reg_write=1, mem_write=0, mem_read = 1, rd_data=data_out
@@ -111,50 +112,6 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
           alu_b = sign_extended_data;
           rd_data = pc + 4;
           next_pc = alu_result & ~32'd1; // JALR requires the least significant bit to be zero
-        end
-        BRANCH: begin
-          alu_a = rs1_data;
-          alu_b = rs2_data;
-          case (f3)
-            B_BEQ: begin
-              alu_op = ALU_EQUALS;
-              if (alu_result == 1) begin
-                next_pc = pc + sign_extended_data;
-              end
-            end
-            B_BNE: begin
-              alu_op = ALU_NOT_EQUALS;
-              if (alu_result == 1) begin
-                next_pc = pc + sign_extended_data;
-              end
-            end
-            B_BLT: begin
-              alu_op = ALU_LT;
-              if (alu_result == 1) begin
-                next_pc = pc + sign_extended_data;
-              end
-            end
-            B_BGE: begin
-              alu_op = ALU_GE;
-              if (alu_result == 1) begin
-                next_pc = pc + sign_extended_data;
-              end
-            end
-            B_BLTU: begin
-              alu_op = ALU_LTU;
-              if (alu_result == 1) begin
-                next_pc = pc + sign_extended_data;
-              end
-            end
-            B_BGEU: begin
-              alu_op = ALU_GEU;
-              if (alu_result == 1) begin
-                next_pc = pc + sign_extended_data;
-              end
-            end
-            default: begin
-            end
-          endcase
         end
         REGISTER_IMM: begin
           case (f3)
@@ -342,6 +299,72 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
 
       unextended_data2 = data_out;
       rd_data = sign_extended_data2;
+    end
+    else if (!reg_write && !mem_write && !mem_read) begin
+      case (opcode)
+        BRANCH: begin
+          alu_a = rs1_data;
+          alu_b = rs2_data;
+          case (f3)
+            B_BEQ: begin
+              alu_op = ALU_EQUALS;
+              if (alu_result == 1) begin
+                next_pc = pc + sign_extended_data;
+              end
+            end
+            B_BNE: begin
+              alu_op = ALU_NOT_EQUALS;
+              if (alu_result == 1) begin
+                next_pc = pc + sign_extended_data;
+              end
+            end
+            B_BLT: begin
+              alu_op = ALU_LT;
+              if (alu_result == 1) begin
+                next_pc = pc + sign_extended_data;
+              end
+            end
+            B_BGE: begin
+              alu_op = ALU_GE;
+              if (alu_result == 1) begin
+                next_pc = pc + sign_extended_data;
+              end
+            end
+            B_BLTU: begin
+              alu_op = ALU_LTU;
+              if (alu_result == 1) begin
+                next_pc = pc + sign_extended_data;
+              end
+            end
+            B_BGEU: begin
+              alu_op = ALU_GEU;
+              if (alu_result == 1) begin
+                next_pc = pc + sign_extended_data;
+              end
+            end
+            default: begin
+            end
+          endcase
+        end
+        FENCE: begin
+          // FENCE is a no-op in this implementation.
+          // It is used when synchronizing memory operations in a multi-core
+          // system, out of order execution, or memory-mapped I/O. Bascially,
+          // they must be ready to accept the next instruction. In this
+          // core, all instructions are executed in order and within a single
+          // cycle, so FENCE is not needed.
+        end
+        ECALL_BREAK: begin
+          if (unextended_data == 32'b0) begin
+            // TODO: implement handling errors via TRAP
+          end
+          if (unextended_data == 32'b1) begin
+            // TODO: implement handling errors via TRAP
+          end
+        end
+        default: begin
+        end
+      endcase
     end
     else rd_data = 0; // default case, no operation
   end

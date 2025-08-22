@@ -103,7 +103,9 @@ package isa_shared;
     REGISTER_IMM = 7'b0010011, // Register-Immediate instructions
     REGISTER = 7'b0110011, // Register-Register instructions
     LUI = 7'b0110111, // Load Upper Immediate Instruction
-    AUIPC = 7'b0010111 // Add Upper Immediate to PC Instruction
+    AUIPC = 7'b0010111, // Add Upper Immediate to PC Instruction
+    FENCE = 7'b0001111, // Fence instruction
+    ECALL_BREAK = 7'b1110011 // Environment Call and Breakpoint
   } opcode_e;
 
   typedef enum logic [1:0] {
