@@ -15,6 +15,7 @@ module signext #(parameter DATA_WIDTH = 32) (
       // general purpose
       SX_1100: sign_extended_data = {{(DATA_WIDTH-1-11){unextended_data[11]}}, unextended_data[11:0]}; // 12 bit immediate signed extension
       SX_2000: sign_extended_data = {{(DATA_WIDTH-1-20){unextended_data[20]}}, unextended_data[20:0]}; // 21 bit immediate signed extension
+      SX_1900: sign_extended_data = {{(DATA_WIDTH-1-19){unextended_data[19]}}, unextended_data[19:0]}; // 19 bit immediate signed extension
 
       // signed extensions
       SX_0700: sign_extended_data = {{(DATA_WIDTH-1-7){unextended_data[7]}}, unextended_data[7:0]}; // byte

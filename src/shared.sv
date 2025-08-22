@@ -31,6 +31,7 @@ package isa_shared;
     SXU_1500 = 5'b00101, // 16 bits unsigned extension
     SX_2000  = 5'b00110, // 21 bits sign extension
     SX_1200 = 5'b00111, // 13 bits sign extension
+    SX_1900 = 5'b01000, // 19 bits sign extension
     SX_NOP = 5'b11111 // No Operation
   } sx_ops_e;
 
@@ -100,7 +101,9 @@ package isa_shared;
     JALR = 7'b1100111, // Jump and Link Register
     BRANCH = 7'b1100011, // Branch instructions
     REGISTER_IMM = 7'b0010011, // Register-Immediate instructions
-    REGISTER = 7'b0110011 // Register-Register instructions
+    REGISTER = 7'b0110011, // Register-Register instructions
+    LUI = 7'b0110111, // Load Upper Immediate Instruction
+    AUIPC = 7'b0010111 // Add Upper Immediate to PC Instruction
   } opcode_e;
 
   typedef enum logic [1:0] {

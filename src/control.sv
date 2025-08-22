@@ -290,6 +290,12 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
             end
           endcase
         end
+        LUI: begin
+          rd_data = sign_extended_data;
+        end
+        AUIPC: begin
+          rd_data = pc + sign_extended_data;
+        end
         default: begin
           if(next_pc[1:0] != 2'b00) begin
             $display("[%0t] error: next_pc %h is not aligned to 4 bytes", $time, next_pc);
