@@ -6,8 +6,9 @@ purely in system verilog.
 
 ### features.
 
-- minimalisitic 32-bit (RV32I) compute core
-- single cycle cpu (each instruction takes one clock cycle).
+- minimalisitic 32-bit (RV32I) single-cycle, compute core
+- implements rv32i (base integer instructions) & zicsr (control and status instructions).
+- all instructions execute in machine mode (other modes aren't implemented yet).
 - educational purpose (not intended for production use).
 
 ### icarus processing.

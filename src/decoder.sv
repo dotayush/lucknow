@@ -18,7 +18,7 @@ module decoder #(parameter DATA_WIDTH = 32) (
     output reg [$clog2(DATA_WIDTH)-1:0] rd,
     output logic [DATA_WIDTH-1:0] unextended_data,
     output reg [4:0] shift_amount,
-    output reg halt
+    output reg [11:0] csr_addr
 );
 
   wire [6:0] inst_op; // opcode present in raw instruction
@@ -37,7 +37,7 @@ module decoder #(parameter DATA_WIDTH = 32) (
     unextended_data = '0;
     opcode = instruction[6:0];
     shift_amount = '0;
-    halt = 0;
+    csr_addr = '0;
     case (inst_op)
       LOAD: begin // memory load instructions
         sx_op = SX_1100;
@@ -83,7 +83,7 @@ module decoder #(parameter DATA_WIDTH = 32) (
         rd = instruction[11:7];
         f3 = instruction[14:12];
         reg_write = 1;
-        case (f3)
+        case (instruction[14:12])
           SH_SLLI: begin
             f7 = instruction[31:25];
             shift_amount = instruction[24:20];
@@ -120,19 +120,30 @@ module decoder #(parameter DATA_WIDTH = 32) (
         // core, all instructions are executed in order and within a single
         // cycle, so FENCE is not needed.
       end
-      ECALL_BREAK: begin
-        unextended_data = instruction[31:20]; // not extending
-        halt = 1; // until trap is implemented, halt the core
+      SYSTEM: begin
+        rd = instruction[11:7];
+        f3 = instruction[14:12];
+        case (instruction[14:12])
+          SYS_ECALL_EBREAK: begin
+            rs1 = instruction[19:15]; // should be 0...TODO: enforce a check
+            unextended_data = instruction[31:20]; // either 0 (ECALL) or 1 (EBREAK)
+          end
+          SYS_CSRRW, SYS_CSRRS, SYS_CSRRC: begin
+            rs1 = instruction[19:15];
+            csr_addr = instruction[31:20];
+          end
+          SYS_CSRRWI, SYS_CSRRSI, SYS_CSRRCI: begin
+            csr_addr = instruction[31:20];
+            unextended_data = instruction[19:15];
+            sx_op = SX_0400;
+          end
+          default: begin
+          end
+        endcase
       end
       default: begin
       end
     endcase
-
-    if (mem_write && mem_read) begin
-      $display("[%0t] error: instruction %b cannot be both a memory write and read at the same time. mem_write=%b, mem_read=%b", $time, instruction, mem_write, mem_read);
-      // TODO: implement TRAP
-      halt = 1;
-    end
   end
 
 endmodule

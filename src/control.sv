@@ -26,7 +26,6 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
   logic [4:0] sx_op;
   reg [4:0] sx_op2;
   wire [6:0] opcode;
-  wire halt;
   wire mem_write;
   wire reg_write;
   wire mem_read;
@@ -50,6 +49,17 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
   logic [DATA_WIDTH-1:0] sign_extended_data2;
   wire [4:0] shift_amount;
 
+  wire [11:0] csr_addr;
+  reg [DATA_WIDTH-1:0] csr_wdata;
+  wire [DATA_WIDTH-1:0] csr_rdata;
+  reg [1:0] csr_op;
+  reg trap;
+  reg [3:0] trap_cause;
+  reg [DATA_WIDTH-1:0] trap_value;
+  reg [DATA_WIDTH-1:0] trap_pc;
+  wire trap_handled;
+  wire [DATA_WIDTH-1:0] trap_target_pc;
+
   localparam int ADDR_WIDTH = $clog2(WORDS);
 
   // state machine for control logic
@@ -61,17 +71,21 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
       addr <= 0;
       data_in <= 0;
       next_pc <= 4;
+      trap <= 0;
+      trap_cause <= 0;
+      trap_value <= 0;
+      trap_pc <= 0;
+      csr_wdata <= 0;
+      csr_op <= CSR_NOP;
     end else begin
-      if (!halt) begin
         pc = next_pc; // warning: blocking assign, we want pc to update immediately. DO NOT UPDATE PC ANYWHERE ELSE.
         next_pc <= next_pc + 4; // warning: non-blocking assign, we want next_pc to be updated at the end of the current clock cycle.
-      end
     end
   end
 
   always @* begin
     /*
-    * is_system => reg_write=0, mem_write=0, mem_read = 0, rd_data=0 (branch, fence, ecall, break)
+    * is_system => reg_write=0, mem_write=0, mem_read = 0, rd_data=0 (branch (not system but doesn't touch anything else), fence, ecall, break)
     * is_store => reg_write=0, mem_write=1, mem_read = 0, rd_data=0
     * is_alu   => reg_write=1, mem_write=0, mem_read = 0, rd_data=alu_result
     * is_load  => reg_write=1, mem_write=0, mem_read = 1, rd_data=data_out
@@ -259,7 +273,7 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
         default: begin
           if(next_pc[1:0] != 2'b00) begin
             $display("[%0t] error: next_pc %h is not aligned to 4 bytes", $time, next_pc);
-            // TODO: implement trap
+
           end
           rd_data = alu_result;
         end
@@ -357,13 +371,83 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
           // core, all instructions are executed in order and within a single
           // cycle, so FENCE is not needed.
         end
-        ECALL_BREAK: begin
-          if (unextended_data == 32'b0) begin
-            // TODO: implement handling errors via TRAP
-          end
-          if (unextended_data == 32'b1) begin
-            // TODO: implement handling errors via TRAP
-          end
+        SYSTEM: begin
+          case (f3)
+            SYS_ECALL_EBREAK: begin
+              if (unextended_data == 32'b0) begin
+                trap = 1;
+                trap_cause = TRAP_ECALL_M;
+                trap_value = 0; // not used for ECALL
+                trap_pc = pc;
+              end
+              else if (unextended_data == 32'b1) begin
+                trap = 1;
+                trap_cause = TRAP_EBREAK;
+                trap_value = 0;
+                trap_pc = pc;
+              end
+            end
+            SYS_CSRRW: begin
+              // always write, but only read if rd != x0
+              if (rd != 'b0) begin
+                logic [DATA_WIDTH-1:0] temp;
+                temp = csr_rdata;
+                rd_data = temp;
+              end
+              csr_op = CSR_WRITE;
+              csr_wdata = rs1_data;
+            end
+            SYS_CSRRS: begin
+              // always read, but only write if rs1 != x0
+              logic [DATA_WIDTH-1:0] temp;
+              temp = csr_rdata;
+              rd_data = temp;
+              if (rs1 != 'b0) begin
+                csr_op = CSR_SET;
+                csr_wdata = rs1_data;
+              end
+            end
+            SYS_CSRRC: begin
+              // always read, but only write if rs1 != x0
+              logic [DATA_WIDTH-1:0] temp;
+              temp = csr_rdata;
+              rd_data = temp;
+              if (rs1 != 'b0) begin
+                csr_op = CSR_CLEAR;
+                csr_wdata = rs1_data;
+              end
+            end
+            SYS_CSRRWI: begin
+              // always write, but only read if rd != x0
+              if (rd != 'b0) begin
+                logic [DATA_WIDTH-1:0] temp;
+                temp = csr_rdata;
+                rd_data = temp;
+              end
+              csr_op = CSR_WRITE;
+              csr_wdata = sign_extended_data;
+            end
+            SYS_CSRRSI: begin
+              // always read, but only write if sign_extended_data != 0
+              logic [DATA_WIDTH-1:0] temp;
+              temp = csr_rdata;
+              rd_data = temp;
+              if (sign_extended_data != 'b0) begin
+                csr_op = CSR_SET;
+                csr_wdata = sign_extended_data;
+              end
+            end
+            SYS_CSRRCI: begin
+              // always read, but only write if sign_extended_data != 0
+              logic [DATA_WIDTH-1:0] temp;
+              temp = csr_rdata;
+              rd_data = temp;
+              if (sign_extended_data != 'b0) begin
+                csr_op = CSR_CLEAR;
+                csr_wdata = sign_extended_data;
+              end
+            end
+          endcase
         end
         default: begin
         end
@@ -403,7 +487,7 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
     .rd(rd),
     .unextended_data(unextended_data),
     .shift_amount(shift_amount),
-    .halt(halt)
+    .csr_addr(csr_addr)
   );
 
   // data memory (ram)
@@ -466,6 +550,24 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
     .unextended_data(unextended_data2),
     .sx_op(sx_op2),
     .sign_extended_data(sign_extended_data2)
+  );
+
+  csrfile #(
+    .DATA_WIDTH(DATA_WIDTH),
+    .COUNT(4096)
+  ) csrfile_inst (
+    .clk(clk),
+    .rst_n(rst_n),
+    .csr_addr(csr_addr),
+    .csr_wdata(csr_wdata),
+    .csr_rdata(csr_rdata),
+    .csr_op(csr_op),
+    .trap(trap),
+    .trap_cause(trap_cause),
+    .trap_value(trap_value),
+    .trap_pc(trap_pc),
+    .trap_handled(trap_handled),
+    .trap_target_pc(trap_target_pc)
   );
 
 endmodule

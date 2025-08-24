@@ -5,4 +5,5 @@
 ./src/decoder.sv
 ./src/memory.sv
 ./src/regfile.sv
+./src/csrfile.sv
 ./tests/test_control.sv
