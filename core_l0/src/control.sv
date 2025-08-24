@@ -59,7 +59,9 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
   reg [DATA_WIDTH-1:0] trap_pc;
   wire trap_handled;
   wire [DATA_WIDTH-1:0] trap_target_pc;
+  reg manual_pc_set;
 
+  logic [DATA_WIDTH-1:0] temp;
   localparam int ADDR_WIDTH = $clog2(WORDS);
 
   // state machine for control logic
@@ -77,9 +79,16 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
       trap_pc <= 0;
       csr_wdata <= 0;
       csr_op <= CSR_NOP;
+      temp <= 0;
+      manual_pc_set <= 0;
     end else begin
         pc = next_pc; // warning: blocking assign, we want pc to update immediately. DO NOT UPDATE PC ANYWHERE ELSE.
-        next_pc <= next_pc + 4; // warning: non-blocking assign, we want next_pc to be updated at the end of the current clock cycle.
+        if (!manual_pc_set) begin
+          // we only update next_pc here if it hasn't been manually set by an
+          // instruction (JAL, JALR, branch)
+          next_pc <= next_pc + 4; // warning: non-blocking assign, we want next_pc to be updated at the end of the current clock cycle.
+          manual_pc_set <= 0;
+        end
     end
   end
 
@@ -114,7 +123,7 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
 
       unextended_data2 = rs2_data;
       data_in = sign_extended_data2; // data to write to memory
-  end
+    end
     else if (reg_write && !mem_write && !mem_read) begin
       // neither load nor store operations.
       case (opcode)
@@ -122,6 +131,7 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
           alu_op = ALU_ADD;
           rd_data = pc + 4; // JAL writes the next PC value to rd
           next_pc = pc + sign_extended_data;
+          manual_pc_set = 1;
         end
         JALR: begin
           alu_op = ALU_ADD;
@@ -129,6 +139,7 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
           alu_b = sign_extended_data;
           rd_data = pc + 4;
           next_pc = alu_result & ~32'd1; // JALR requires the least significant bit to be zero
+          manual_pc_set = 1;
         end
         REGISTER_IMM: begin
           case (f3)
@@ -322,6 +333,7 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
         BRANCH: begin
           alu_a = rs1_data;
           alu_b = rs2_data;
+          manual_pc_set = 1;
           case (f3)
             B_BEQ: begin
               alu_op = ALU_EQUALS;
@@ -390,7 +402,6 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
             SYS_CSRRW: begin
               // always write, but only read if rd != x0
               if (rd != 'b0) begin
-                logic [DATA_WIDTH-1:0] temp;
                 temp = csr_rdata;
                 rd_data = temp;
               end
@@ -399,7 +410,6 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
             end
             SYS_CSRRS: begin
               // always read, but only write if rs1 != x0
-              logic [DATA_WIDTH-1:0] temp;
               temp = csr_rdata;
               rd_data = temp;
               if (rs1 != 'b0) begin
@@ -409,7 +419,6 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
             end
             SYS_CSRRC: begin
               // always read, but only write if rs1 != x0
-              logic [DATA_WIDTH-1:0] temp;
               temp = csr_rdata;
               rd_data = temp;
               if (rs1 != 'b0) begin
@@ -420,7 +429,6 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
             SYS_CSRRWI: begin
               // always write, but only read if rd != x0
               if (rd != 'b0) begin
-                logic [DATA_WIDTH-1:0] temp;
                 temp = csr_rdata;
                 rd_data = temp;
               end
@@ -429,7 +437,6 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
             end
             SYS_CSRRSI: begin
               // always read, but only write if sign_extended_data != 0
-              logic [DATA_WIDTH-1:0] temp;
               temp = csr_rdata;
               rd_data = temp;
               if (sign_extended_data != 'b0) begin
@@ -439,7 +446,6 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
             end
             SYS_CSRRCI: begin
               // always read, but only write if sign_extended_data != 0
-              logic [DATA_WIDTH-1:0] temp;
               temp = csr_rdata;
               rd_data = temp;
               if (sign_extended_data != 'b0) begin

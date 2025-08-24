@@ -29,10 +29,10 @@ package isa_shared;
     SX_0700 = 5'b00011, // 8 bits sign extension
     SXU_0700 = 5'b00100, // 8 bits unsigned extension
     SXU_1500 = 5'b00101, // 16 bits unsigned extension
+    SXU_0400 = 5'b01001, // 5 bits unsigned extension
     SX_2000  = 5'b00110, // 21 bits sign extension
     SX_1200 = 5'b00111, // 13 bits sign extension
     SX_1900 = 5'b01000, // 19 bits sign extension
-    SX_0400 = 5'b01001, // 5 bits unsigned extension
     SX_NOP = 5'b11111 // No Operation
   } sx_ops_e;
   typedef enum logic [2:0] {

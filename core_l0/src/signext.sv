@@ -21,10 +21,12 @@ module signext #(parameter DATA_WIDTH = 32) (
       SX_0700: sign_extended_data = {{(DATA_WIDTH-1-7){unextended_data[7]}}, unextended_data[7:0]}; // byte
       SX_1500: sign_extended_data = {{(DATA_WIDTH-1-15){unextended_data[15]}}, unextended_data[15:0]}; // half-word
       SX_3100: sign_extended_data = unextended_data; // word
+      SX_1200: sign_extended_data = {{(DATA_WIDTH-1-12){unextended_data[12]}}, unextended_data[12:0]}; // 13 bit immediate signed extension
 
       // unsigned extensions
       SXU_0700: sign_extended_data = {{(DATA_WIDTH-1-7){1'b0}}, unextended_data[7:0]}; // byte
       SXU_1500: sign_extended_data = {{(DATA_WIDTH-1-15){1'b0}}, unextended_data[15:0]}; // half-word
+      SXU_0400: sign_extended_data = {{(DATA_WIDTH-1-4){1'b0}}, unextended_data[4:0]}; // 5 bit unsigned extension (for shift amount)
       default: sign_extended_data = '0;
     endcase
   end

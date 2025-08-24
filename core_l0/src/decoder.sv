@@ -135,7 +135,7 @@ module decoder #(parameter DATA_WIDTH = 32) (
           SYS_CSRRWI, SYS_CSRRSI, SYS_CSRRCI: begin
             csr_addr = instruction[31:20];
             unextended_data = instruction[19:15];
-            sx_op = SX_0400;
+            sx_op = SXU_0400;
           end
           default: begin
           end

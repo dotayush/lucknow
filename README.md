@@ -1,3 +1,5 @@
+[!img](./assets/photo.png)
+
 ### lucknow.
 
 "lucknow." is an open source, minimalistic risc-v core
