@@ -1,4 +1,4 @@
-![img](./assets/logo.png)
+![img](./assets/logo.svg)
 
 ### lucknow.
 "lucknow." is an open-source project where i'll publish a collection of
