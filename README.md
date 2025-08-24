@@ -1,10 +1,10 @@
-### lucknow.
+![img](./assets/logo.png)
 
+### lucknow.
 "lucknow." is an open-source project where i'll publish a collection of
 digital designs i've created at the heart of the city of lucknow, india!
 
 ### packages.
-
 - ./core l0
   - 32-bit, single-cycle, compute core
   - rv32i + zicsr
@@ -13,7 +13,6 @@ digital designs i've created at the heart of the city of lucknow, india!
   - educational purpose
 
 ### icarus processing.
-
 > the following requires tools available in the
 > [oss-cad-suite](https://github.com/YosysHQ/oss-cad-suite-build?tab=readme-ov-file#installation)
 
@@ -30,7 +29,6 @@ vvp ./tests/results/test_control.out # generates a ./tests/results/test_control.
 ```
 
 ### yosys processing.
-
 ```bash
 cd ./core_l0
 
@@ -48,7 +46,6 @@ show -format dot -prefix ./arch/design # write a dot for graphviz
 ```
 
 ### visualization.
-
 ```bash
 cd ./core_l0
 # if you've generated the dot file, you can visualize it with graphviz
