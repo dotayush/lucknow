@@ -1,17 +1,16 @@
-[!img](./assets/photo.png)
-
 ### lucknow.
 
-"lucknow." is an open source, minimalistic risc-v core
-implementing the rv32i spec (as i understand it) written
-purely in system verilog.
+"lucknow." is an open-source project where i'll publish a collection of
+digital designs i've created at the heart of the city of lucknow, india!
 
-### features.
+### packages.
 
-- minimalisitic 32-bit (RV32I) single-cycle, compute core
-- implements rv32i (base integer instructions) & zicsr (control and status instructions).
-- all instructions execute in machine mode (other modes aren't implemented yet).
-- educational purpose (not intended for production use).
+- ./core l0
+  - 32-bit, single-cycle, compute core
+  - rv32i + zicsr
+  - all code executes in machine mode (m-mode)
+  - can be used as a design block in larger designs where a minimal central control unit is needed
+  - educational purpose
 
 ### icarus processing.
 
@@ -19,6 +18,7 @@ purely in system verilog.
 > [oss-cad-suite](https://github.com/YosysHQ/oss-cad-suite-build?tab=readme-ov-file#installation)
 
 ```bash
+cd ./core_l0
 
 # single module compilation (for example: alu.sv)
 iverilog -g2012 -o ./tests/results/test_alu.out ./src/shared.sv ./src/alu.sv ./tests/test_alu.sv
@@ -32,6 +32,8 @@ vvp ./tests/results/test_control.out # generates a ./tests/results/test_control.
 ### yosys processing.
 
 ```bash
+cd ./core_l0
+
 # start yosys
 yosys
 
@@ -41,20 +43,21 @@ hierarchy -check -top control
 proc # convert design to strcutural repr.
 
 # visualization processing
-write_json control_design.json # write a json netlist (processing by other tools)
-show -format dot -prefix control_design # write a dot for graphviz
+write_json ./arch/design.json # write a json netlist (processing by other tools)
+show -format dot -prefix ./arch/design # write a dot for graphviz
 ```
 
 ### visualization.
 
 ```bash
+cd ./core_l0
 # if you've generated the dot file, you can visualize it with graphviz
-dot -Tsvg control_design.dot -o control_design_dot.svg
+dot -Tsvg ./arch/design.dot -o ./arch/design_dot.svg
 
 # if you've generated a json file, i suggest you to use the pp_json.py
 # first to simplify the module naming before using it with other visualization tools
-python pp_json.py
-netlistsvg control_design.json -o control_design.svg # example of json netlist usage with another visualization tool
+python pp_json.py -i ./arch/design.json -o ./arch/pp_design.json
+netlistsvg ./arch/pp_design.json -o ./design.svg # example of json netlist usage with another visualization tool
 ```
 
 ### license.

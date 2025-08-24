@@ -1,9 +1,19 @@
 import json
+import argparse
 
 # { "module_name": "new_name", ... }
 tracker = {}
 
-with open('control_design.json', 'r') as file:
+# get arg from -i
+parser = argparse.ArgumentParser(description='Process netlist JSON file.')
+parser.add_argument('-i', '--input', type=str, required=True, help='Input netlist JSON file')
+parser.add_argument('-o', '--output', type=str, required=True, help='Output netlist JSON file')
+args = parser.parse_args()
+
+print(f"[netlistsvg pre-processor] input_file={args.input}, output_file={args.output}")
+
+
+with open(args.input, 'r') as file:
     netlist_json = json.load(file)
 
 for module in netlist_json['modules']:
@@ -34,7 +44,7 @@ for module in netlist_json['modules']:
     else:
         tracker[module] = module
 
-with open('control_design.json', 'r') as file:
+with open(args.input, 'r') as file:
     netlist_str = file.read()
 
 for (old_name, new_name) in tracker.items():
@@ -44,7 +54,7 @@ for (old_name, new_name) in tracker.items():
     print(f"renaming {escaped_old} to {escaped_new}")
     netlist_str = netlist_str.replace(escaped_old, escaped_new)
 
-with open('control_design.json', 'w') as file:
+with open(args.output, 'w') as file:
     file.write(netlist_str)
 
 print("renaming completed successfully.")
