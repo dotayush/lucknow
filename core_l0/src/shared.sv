@@ -97,6 +97,12 @@ package isa_shared;
     SYS_CSRRCI = 3'b111 // Atomic Read and Clear Bits in CSR Immediate
   } system_function3_e;
 
+  typedef enum logic [11:0] {
+    SYS_FUN_ECALL = 12'b00000_00_00000, // Environment Call
+    SYS_FUN_EBREAK = 12'b00000_00_00001, // Breakpoint
+    SYS_FUN_MRET = 12'b00110_00_00010 // Machine-mode Return from Trap
+  } sys_functions_e;
+
   typedef enum logic [6:0] {
     LOAD = 7'b0000011, // Load instructions
     STORE = 7'b0100011, // Store instructions

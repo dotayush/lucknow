@@ -423,18 +423,24 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
           case (f3)
             SYS_ECALL_EBREAK: begin
               manual_pc_set = 1;
-              if (unextended_data == 32'b0) begin
-                trap = 1;
-                trap_cause = TRAP_ECALL_M;
-                trap_value = 0; // not used for ECALL
-                trap_pc = pc;
-              end
-              else if (unextended_data == 32'b1) begin
-                trap = 1;
-                trap_cause = TRAP_EBREAK;
-                trap_value = 0;
-                trap_pc = pc;
-              end
+              case (unextended_data[11:0])
+                SYS_FUN_ECALL: begin
+                  trap = 1;
+                  trap_cause = TRAP_ECALL_M;
+                  trap_value = 0; // not used for ECALL
+                  trap_pc = pc;
+                end
+                SYS_FUN_EBREAK: begin
+                  trap = 1;
+                  trap_cause = TRAP_EBREAK;
+                  trap_value = 0;
+                  trap_pc = pc;
+                end
+                SYS_FUN_MRET: begin
+                  manual_pc_set = 1;
+                  next_pc = csr_rdata; // MEPC
+                end
+              endcase
             end
             SYS_CSRRW: begin
               // always write, but only read if rd != x0
