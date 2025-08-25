@@ -126,8 +126,8 @@ module decoder #(parameter DATA_WIDTH = 32) (
         case (instruction[14:12])
           SYS_ECALL_EBREAK: begin
             rs1 = instruction[19:15]; // should be 0...TODO: enforce a check
-            unextended_data = instruction[31:20]; // either 0 (ECALL) or 1 (EBREAK)
-
+            unextended_data = instruction[31:20];
+            // only MRET is supported in this implementation
             case (instruction[31:20])
                 SYS_FUN_MRET: begin
                   csr_addr = CSR_MEPC;
