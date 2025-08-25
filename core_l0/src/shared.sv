@@ -129,8 +129,15 @@ package isa_shared;
     TRAP_ECALL_M = 4'b0011, // Environment call from M-mode
     TRAP_EBREAK = 4'b0100, // Breakpoint
     TRAP_ILLEGAL_INSTRUCTION = 4'b0101, // Illegal instruction
-    TRAP_MEMORY_ADDRESS_MISALIGNED = 4'b0110 // Address misaligned
+    TRAP_MEMORY_ADDR_MISALIGNED = 4'b0110, // Address misaligned
+    TRAP_MEMORY_ADDR_OOB = 4'b0111 // Address out of bounds
   } trap_cause_e;
+
+  typedef enum logic [1:0] {
+    NO_MEM_ERROR = 2'b00, // No memory error
+    ADDRESS_MISALIGNED = 2'b01, // Load address misaligned
+    OUT_OF_BOUNDS = 2'b10 // Address out of bounds
+  } mem_errors_e;
 
   typedef enum logic [11:0] {
     // machine trap and interrupt related CSRs

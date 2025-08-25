@@ -32,12 +32,13 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
   wire [$clog2(DATA_WIDTH)-1:0] rs1;
   wire [$clog2(DATA_WIDTH)-1:0] rs2;
   wire [$clog2(DATA_WIDTH)-1:0] rd;
-  reg [1:0] mem_access_type;
 
+  reg [1:0] mem_access_type;
   reg [DATA_WIDTH-1:0] addr;
   reg [DATA_WIDTH-1:0] data_in;
-
   wire [DATA_WIDTH-1:0] data_out;
+  wire [1:0] mem_error;
+  wire [1:0] mem_error2;
 
   wire [DATA_WIDTH-1:0] rs1_data;
   wire [DATA_WIDTH-1:0] rs2_data;
@@ -70,11 +71,15 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
       pc <= 0;
       alu_a <= 0;
       alu_b <= 0;
+      alu_op <= ALU_NOP;
+      sx_op2 <= SX_NOP;
+      mem_access_type <= WORD_MEM_ACCESS;
       addr <= 0;
       data_in <= 0;
+      rd_data <= 0;
       next_pc <= 4;
       trap <= 0;
-      trap_cause <= 0;
+      trap_cause <= TRAP_NONE;
       trap_value <= 0;
       trap_pc <= 0;
       csr_wdata <= 0;
@@ -83,12 +88,43 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
       manual_pc_set <= 0;
     end else begin
         pc = next_pc; // warning: blocking assign, we want pc to update immediately. DO NOT UPDATE PC ANYWHERE ELSE.
+
+        // if next_pc is manually set (by branch, jump, trap), do not increment it by 4.
         if (!manual_pc_set) begin
-          // we only update next_pc here if it hasn't been manually set by an
-          // instruction (JAL, JALR, branch)
           next_pc <= next_pc + 4; // warning: non-blocking assign, we want next_pc to be updated at the end of the current clock cycle.
           manual_pc_set <= 0;
         end
+        // handle traps
+        if (trap_handled) begin
+          next_pc <= trap_target_pc;
+          trap <= 0;
+          trap_cause <= TRAP_NONE;
+          trap_value <= 0;
+          trap_pc <= 0;
+          $display("[%0t] info: trap handled, jumping to trap handler at %h", $time, trap_target_pc);
+        end
+
+        case (mem_error)
+          NO_MEM_ERROR: begin
+            // do nothing
+          end
+          ADDRESS_MISALIGNED: begin
+            manual_pc_set <= 1;
+            trap <= 1;
+            trap_cause <= TRAP_MEMORY_ADDR_MISALIGNED;
+            trap_value <= addr;
+            trap_pc <= pc;
+          end
+          OUT_OF_BOUNDS: begin
+            manual_pc_set <= 1;
+            trap <= 1;
+            trap_cause <= TRAP_MEMORY_ADDR_MISALIGNED;
+            trap_value <= addr;
+            trap_pc <= pc;
+          end
+          default: begin
+          end
+        endcase
     end
   end
 
@@ -386,6 +422,7 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
         SYSTEM: begin
           case (f3)
             SYS_ECALL_EBREAK: begin
+              manual_pc_set = 1;
               if (unextended_data == 32'b0) begin
                 trap = 1;
                 trap_cause = TRAP_ECALL_M;
@@ -459,7 +496,14 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
         end
       endcase
     end
-    else rd_data = 0; // default case, no operation
+    else begin // should never occur
+      manual_pc_set = 1;
+      trap = 1;
+      trap_cause = TRAP_ILLEGAL_INSTRUCTION;
+      trap_value = instruction;
+      trap_pc = pc;
+      rd_data = 0;
+    end
   end
 
 
@@ -507,7 +551,8 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
     .mem_read(mem_read),
     .mem_write(mem_write),
     .data_out(data_out),
-    .mem_access_type(mem_access_type) // Use the access type from decoder
+    .mem_access_type(mem_access_type), // Use the access type from decoder
+    .mem_error(mem_error)
   );
 
   // instruction memory (rom)
@@ -522,7 +567,8 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
     .mem_read('1), // Always read from instruction memory
     .mem_write('0), // No write to instruction memory
     .data_out(instruction),
-    .mem_access_type(isa_shared::WORD_MEM_ACCESS)
+    .mem_access_type(isa_shared::WORD_MEM_ACCESS),
+    .mem_error(mem_error2)
   );
 
   // register file

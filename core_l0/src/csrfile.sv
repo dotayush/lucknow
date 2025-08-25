@@ -33,6 +33,8 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096) (
   endfunction
 
   always @(posedge clk or negedge rst_n) begin
+    trap_target_pc <= 'b0;
+    trap_handled <= 0;
     if (!rst_n) begin
       for (int i = 0; i < COUNT; i = i + 1) begin
         case (i)

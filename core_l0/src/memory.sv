@@ -15,7 +15,8 @@ module memory #(
   input  wire [1:0]               mem_access_type,
   input  wire [DATA_WIDTH-1:0]    addr,
   input  wire [DATA_WIDTH-1:0]    data_in,
-  output reg  [DATA_WIDTH-1:0]    data_out
+  output reg  [DATA_WIDTH-1:0]    data_out,
+  output reg  [1:0]               mem_error
 );
 
   localparam int ADDR_WIDTH = $clog2(WORDS);
@@ -35,6 +36,7 @@ module memory #(
   end
 
   always @(posedge clk) begin
+    mem_error <= NO_MEM_ERROR;
     if (!rst_n) begin
       for (i = 0; i < WORDS; i = i + 1) mem[i] <= '0;
     end
@@ -46,11 +48,13 @@ module memory #(
       oob_w   = (addr[DATA_WIDTH-1:2] >= WORDS);
 
       if (oob_w) begin
+        mem_error = OUT_OF_BOUNDS;
         $strobe("[%0t] warning (write): addr=%h out of bounds, wrapping=%h, mem_access_type=%b", $time, addr, paddr_w, mem_access_type);
         mem[paddr_w[DATA_WIDTH-1:2]] <= data_in;
       end
       else begin
         if (!mem_aligned) begin
+          mem_error = ADDRESS_MISALIGNED;
           $strobe("[%0t] warning (write): addr=%h not aligned, mem_access_type=%b", $time, addr, mem_access_type);
         end
         else begin
@@ -77,11 +81,13 @@ module memory #(
       oob_r   = (addr[DATA_WIDTH-1:2] >= WORDS);
 
       if (oob_r) begin
+        mem_error = OUT_OF_BOUNDS;
         $strobe("[%0t] warning (read): addr=%h out of bounds, wrapping=%h, mem_access_type=%b", $time, addr, paddr_r, mem_access_type);
         data_out = mem[paddr_r[DATA_WIDTH-1:2]];
       end
       else begin
         if (!mem_aligned) begin
+          mem_error = ADDRESS_MISALIGNED;
           $strobe("[%0t] warning (read): addr=%h not aligned, mem_access_type=%b", $time, addr, mem_access_type);
           data_out = '0;
         end

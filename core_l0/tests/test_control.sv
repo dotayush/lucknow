@@ -36,7 +36,7 @@ module test_control;
   // reset
   initial begin
     rst_n = 0;
-    #(1 * CLK_PERIOD); // hold reset for 1 clock cycles
+    #5; // hold reset for 1 clock cycles
     rst_n = 1; // release reset
   end
 
@@ -45,7 +45,6 @@ module test_control;
     $dumpfile("./tests/results/test_control.vcd");
     $dumpvars(0, dut);
 
-    @(posedge rst_n); // wait for reset to be released
     repeat (64) @(negedge clk);
 
     // Finish the test
