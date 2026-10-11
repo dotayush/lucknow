@@ -27,9 +27,19 @@ digital designs i've created at the heart of the city of lucknow, india!
     not ready, `bus.sv` can add wait states (`FETCH_WAIT`, `DATA_WAIT`) to model slow memory
   - uart @ `0x1000_0000`: transmit only, 16550 register layout (what the ns16550a driver and earlycon use),
     byte accesses, 8N1 at clk/`UART_CLKS_PER_BIT`; `UART_ECHO=1` prints the bytes in simulation
-  - `soc.sv` wires the core to the bus; unmapped accesses, stores to the rom and non-byte uart accesses are access faults
-  - passes riscv-tests rv32ui (including `fence_i`), rv32mi, rv32um and rv32ua, also with wait states
-  - not done yet: interrupts (timer, clint), uart receive, more peripherals
+  - clint @ `0x0200_0000` (qemu virt / sifive layout, one hart): `msip` @ `+0x0`, `mtimecmp` @ `+0x4000`,
+    `mtime` @ `+0xBFF8`, word accesses; `mtime` counts clocks
+  - machine interrupts: timer (mip.MTIP) and software (mip.MSIP) from the clint, `mie`, `mstatus.MIE/MPIE`, taken
+    between instructions (an interrupted instruction does nothing and is replayed after `mret`, `mepc` is its pc),
+    `mtvec` direct and vectored mode; `wfi` is a no-op
+  - counters: `mcycle`/`minstret` (64 bit, `mcycleh`/`minstreth`), `cycle`/`instret` aliases, `time`/`timeh` read
+    from the clint's `mtime`
+  - `mstatus` only has MIE, MPIE and MPP (always machine mode), `mip` is read only
+  - `soc.sv` wires the core to the bus; unmapped accesses, stores to the rom, non-byte uart accesses and
+    non-word clint accesses are access faults
+  - passes riscv-tests rv32ui (including `fence_i`), rv32mi (including `illegal` and `instret_overflow`),
+    rv32um and rv32ua, also with wait states
+  - not done yet: uart receive, plic / external interrupts, more peripherals, s-mode and an mmu
 
 ### riscv-tests.
 the cores are checked against the official [riscv-tests](https://github.com/riscv-software-src/riscv-tests) isa suites.
@@ -45,15 +55,21 @@ into `core/l0/riscv-tests` (ignored by git).
 RV_IFLAGS="-Ptest_riscv.FETCH_WAIT=2 -Ptest_riscv.DATA_WAIT=3" ./soc/k0/riscv/run.sh
 ```
 
-not run, because the feature doesn't exist in the core: rv32mi `illegal` (interrupts, vectored mtvec),
-`instret_overflow` (minstret), `breakpoint` (debug triggers), and for l0 rv32ui `fence_i` (no writable instruction
-memory); `ma_data` (misaligned data access in hardware) is skipped everywhere. the a extension tests only exist
-for k0 (rv32ua, `RV_UA=1`).
+not run, because the feature doesn't exist in the core: `breakpoint` (debug triggers) everywhere; for l0 rv32mi
+`illegal` (interrupts, vectored mtvec) and `instret_overflow` (minstret, they run for k0 through `RV_MI_EXTRA`)
+and rv32ui `fence_i` (no writable instruction memory); `ma_data` (misaligned data access in hardware) is skipped
+everywhere. the a extension tests only exist for k0 (rv32ua, `RV_UA=1`).
 
-a bare-metal program on k0 (builds `programs/<name>.S`, runs it, checks what the uart prints):
+bare-metal programs on k0 (builds `programs/<name>.S`, runs it, checks what the uart prints against
+`programs/<name>.expect`, `hello` is the default):
 
 ```bash
-./soc/k0/programs/run.sh hello
+./soc/k0/programs/run.sh hello       # uart output
+./soc/k0/programs/run.sh timer       # clint timer and software interrupts, direct and vectored mtvec
+./soc/k0/programs/run.sh irqatomic   # amos interrupted at random points are neither lost nor repeated
+
+# with slow memories
+IFLAGS="-Ptest_hello.FETCH_WAIT=2 -Ptest_hello.DATA_WAIT=3" ./soc/k0/programs/run.sh irqatomic
 ```
 
 ### icarus processing.
