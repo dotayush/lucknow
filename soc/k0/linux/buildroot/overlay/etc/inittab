@@ -1,0 +1,3 @@
+# no getty, no scripts: a shell on the console. the kernel opened /dev/console as stdin, stdout, stderr
+::sysinit:/bin/mount -t proc proc /proc
+::respawn:-/bin/sh

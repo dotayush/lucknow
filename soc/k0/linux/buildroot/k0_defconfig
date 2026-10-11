@@ -1,0 +1,22 @@
+# buildroot configuration for a no mmu rv32ima userland on k0: uClibc-ng, busybox, flat binaries
+# (elf2flt). build with ./linux/buildroot/build.sh, the root filesystem is a cpio the kernel embeds.
+BR2_riscv=y
+BR2_riscv_custom=y
+BR2_RISCV_32=y
+# BR2_RISCV_USE_MMU is not set
+BR2_RISCV_ISA_RVI=y
+BR2_RISCV_ISA_RVM=y
+BR2_RISCV_ISA_RVA=y
+# BR2_RISCV_ISA_RVF is not set
+# BR2_RISCV_ISA_RVD is not set
+# BR2_RISCV_ISA_RVC is not set
+BR2_RISCV_ABI_ILP32=y
+BR2_BINFMT_FLAT=y
+BR2_OPTIMIZE_S=y
+BR2_TOOLCHAIN_BUILDROOT_UCLIBC=y
+BR2_KERNEL_HEADERS_6_12=y
+BR2_SYSTEM_BIN_SH_BUSYBOX=y
+# BR2_TARGET_GENERIC_GETTY is not set
+BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_K0_PATH)/overlay"
+BR2_TARGET_ROOTFS_CPIO=y
+# BR2_TARGET_ROOTFS_TAR is not set
