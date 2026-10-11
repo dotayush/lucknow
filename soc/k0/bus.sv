@@ -1,109 +1,167 @@
-module memory_bus #(
-  parameter DATA_WIDTH = 32,
-  parameter ADDR_WIDTH = 32
-  parameter AGENTS = 2 // number of bus agents
+`ifndef ISA_SHARED_IMPORT
+  `define ISA_SHARED_IMPORT
+  import isa_shared::*;
+`endif
+
+// holds the wait for one port: ready is low for WAIT cycles after a new request shows up
+// and stays high for as long as the same request is held.
+module wait_states #(
+  parameter int WAIT = 0,
+  parameter int ID_WIDTH = 32
 )(
-  // global signals
   input wire clk,
   input wire rst_n,
-
-  // agent interfaces
-  input wire agent_req [0:AGENTS-1], // request signal from agent to use the bus
-  output reg agent_grant [0:AGENTS-1], // grant signal from bus to agent
-  input wire agent_rt  [0:AGENTS-1], // request type: 0 = read, 1 = write
-  input wire [1:0] agent_at [0:AGENTS-1], // 00 = byte, 01 = halfword, 10 = word
-  input wire [ADDR_WIDTH-1:0] agent_addr [0:AGENTS-1], // address from agent
-  input wire [DATA_WIDTH-1:0] agent_wdata [0:AGENTS-1], // write data from agent
-  output reg [DATA_WIDTH-1:0] agent_rdata [0:AGENTS-1], // read data to agent
-  output reg [1:0] agent_error [0:AGENTS-1], // error signal from bus to agent
-  output reg agent_ready [0:AGENTS-1], // ready signal from bus to agent
-
-  // memory interface
-  output reg mem_req, // request signal to memory
-  output reg mem_rw, // request type: 0 = read, 1 = write
-  output reg [1:0] mem_access_type, // 00 = byte, 01 = halfword, 10 = word
-  output reg [ADDR_WIDTH-1:0] mem_addr, // address to memory
-  output reg [DATA_WIDTH-1:0] mem_wdata, // write data to memory
-  input wire [DATA_WIDTH-1:0] mem_rdata, // read data from memory
-  input wire mem_ready, // ready signal from memory
-  input wire [1:0] mem_error // error signal from memory
+  input wire req,
+  input wire [ID_WIDTH-1:0] req_id, // what is requested, the wait starts over when it changes
+  output wire ready
 );
 
-  // simple round-robin arbiter
-  integer i;
-  reg [31:0] current_agent; // index of the current agent being served
+  reg last_req;
+  reg [ID_WIDTH-1:0] last_id;
+  reg [31:0] waited; // cycles this request has already been held
 
+  wire same = req && last_req && (req_id == last_id);
+  wire [31:0] held = same ? waited : 32'd0;
 
-  // initial state
-  initial begin
-    current_agent = 0;
-    for (i = 0; i < AGENTS; i = i + 1) begin
-      agent_grant[i] = 0;
-      agent_ready[i] = 0;
-      agent_error[i] = 0;
-      agent_rdata[i] = 0;
-    end
-    mem_req = 0;
-    mem_rw = 0;
-    mem_access_type = 0;
-    mem_addr = 0;
-    mem_wdata = 0;
-  end
+  assign ready = !req || (held >= WAIT);
 
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-      current_agent <= 0;
-      for (i = 0; i < AGENTS; i = i + 1) begin
-        agent_grant[i] <= 0;
-        agent_ready[i] <= 0;
-        agent_error[i] <= 0;
-        agent_rdata[i] <= 0;
-      end
-      mem_req <= 0;
-      mem_rw <= 0;
-      mem_access_type <= 0;
-      mem_addr <= 0;
-      mem_wdata <= 0;
+      last_req <= 0;
+      last_id <= '0;
+      waited <= 0;
     end
     else begin
-      // check if memory is ready to accept a new request or return data
-      if (mem_ready) begin
-        // if memory was ready, clear the request signal
-        mem_req <= 0;
-
-        // if there was an active request, return data and error to the corresponding agent
-        if (agent_grant[current_agent]) begin
-          agent_ready[current_agent] <= 1; // signal that the request is complete
-          agent_error[current_agent] <= mem_error; // pass through any memory error
-          if (!mem_rw) begin // if it was a read request, provide the read data
-            agent_rdata[current_agent] <= mem_rdata;
-          end
-          agent_grant[current_agent] <= 0; // clear the grant signal
-        end
-
-        // move to the next agent in round-robin fashion
-        current_agent <= (current_agent + 1) % AGENTS;
-
-        // check for new requests from agents
-        for (i = 0; i < AGENTS; i = i + 1) begin
-          if (agent_req[(current_agent + i) % AGENTS]) begin
-            // grant the bus to this agent
-            current_agent <= (current_agent + i) % AGENTS;
-            agent_grant[current_agent] <= 1;
-            agent_ready[current_agent] <= 0; // clear ready signal for new request
-            agent_error[current_agent] <= 0; // clear error signal for new request
-
-            // set up memory request signals
-            mem_req <= 1;
-            mem_rw <= agent_rt[current_agent];
-            mem_access_type <= agent_at[current_agent];
-            mem_addr <= agent_addr[current_agent];
-            mem_wdata <= agent_wdata[current_agent];
-            break; // exit the loop after granting one agent
-          end
-        end
+      last_req <= req;
+      last_id <= req_id;
+      waited <= req ? (same ? waited + 1 : 32'd1) : 32'd0;
     end
   end
 
+endmodule
+
+// address decoder between the core and the memories. one memory map for both ports:
+//
+//   ROM_BASE  boot rom, read only
+//   RAM_BASE  ram, the instruction port and the data port see the same words
+//
+// anything else is an access fault (OUT_OF_BOUNDS), as is a store to the rom and a fetch
+// that isn't word aligned. the ports mirror control's: imem_* for fetch, mem_* for data.
+module bus #(
+  parameter DATA_WIDTH = 32,
+  parameter [DATA_WIDTH-1:0] ROM_BASE = 32'h0000_1000,
+  parameter int ROM_WORDS = 1024,
+  parameter [DATA_WIDTH-1:0] RAM_BASE = 32'h8000_0000,
+  parameter int RAM_WORDS = 8192,
+  parameter ROM_INIT = "./memory/bootrom.hex",
+  parameter RAM_INIT = "",
+  parameter int FETCH_WAIT = 0, // wait cycles added to every new fetch
+  parameter int DATA_WAIT = 0 // wait cycles added to every new data access
+)(
+  input wire clk,
+  input wire rst_n,
+
+  // instruction port
+  input wire [DATA_WIDTH-1:0] imem_addr,
+  output reg [DATA_WIDTH-1:0] imem_data,
+  output wire imem_ready,
+  output reg [1:0] imem_error,
+
+  // data port
+  input wire mem_read,
+  input wire mem_write,
+  input wire [1:0] mem_access_type,
+  input wire [DATA_WIDTH-1:0] mem_addr,
+  input wire [DATA_WIDTH-1:0] mem_wdata,
+  output reg [DATA_WIDTH-1:0] mem_rdata,
+  output wire mem_ready,
+  output reg [1:0] mem_error
+);
+
+  // fetch side regions
+  wire f_rom = (imem_addr >= ROM_BASE) && ((imem_addr - ROM_BASE) < ROM_WORDS * 4);
+  wire f_ram = (imem_addr >= RAM_BASE) && ((imem_addr - RAM_BASE) < RAM_WORDS * 4);
+  // data side regions
+  wire d_rom = (mem_addr >= ROM_BASE) && ((mem_addr - ROM_BASE) < ROM_WORDS * 4);
+  wire d_ram = (mem_addr >= RAM_BASE) && ((mem_addr - RAM_BASE) < RAM_WORDS * 4);
+
+  wire [DATA_WIDTH-1:0] rom_rdata, ram_rdata, rom_fdata, ram_fdata;
+  wire [1:0] rom_error, ram_error, rom_ferror, ram_ferror;
+
+  wait_states #(.WAIT(FETCH_WAIT), .ID_WIDTH(DATA_WIDTH)) fetch_wait (
+    .clk(clk), .rst_n(rst_n), .req(1'b1), .req_id(imem_addr), .ready(imem_ready)
+  );
+
+  wait_states #(.WAIT(DATA_WAIT), .ID_WIDTH(DATA_WIDTH + 4)) data_wait (
+    .clk(clk), .rst_n(rst_n), .req(mem_read || mem_write),
+    .req_id({mem_write, mem_read, mem_access_type, mem_addr}), .ready(mem_ready)
+  );
+
+  cache #(
+    .DATA_WIDTH(DATA_WIDTH),
+    .CACHE_SIZE(ROM_WORDS),
+    .MEM_INIT(ROM_INIT)
+  ) rom_inst (
+    .clk(clk),
+    .rst_n(rst_n),
+    .mem_write(1'b0),
+    .mem_read(mem_read && d_rom),
+    .mem_access_type(mem_access_type),
+    .addr(mem_addr - ROM_BASE),
+    .data_in('0),
+    .data_out(rom_rdata),
+    .mem_error(rom_error),
+    .fetch_addr(imem_addr - ROM_BASE),
+    .fetch_data(rom_fdata),
+    .fetch_error(rom_ferror)
+  );
+
+  cache #(
+    .DATA_WIDTH(DATA_WIDTH),
+    .CACHE_SIZE(RAM_WORDS),
+    .MEM_INIT(RAM_INIT)
+  ) ram_inst (
+    .clk(clk),
+    .rst_n(rst_n),
+    .mem_write(mem_write && d_ram && mem_ready), // lands once, on the edge where the transfer completes
+    .mem_read(mem_read && d_ram),
+    .mem_access_type(mem_access_type),
+    .addr(mem_addr - RAM_BASE),
+    .data_in(mem_wdata),
+    .data_out(ram_rdata),
+    .mem_error(ram_error),
+    .fetch_addr(imem_addr - RAM_BASE),
+    .fetch_data(ram_fdata),
+    .fetch_error(ram_ferror)
+  );
+
+  always @* begin
+    imem_data = '0;
+    imem_error = OUT_OF_BOUNDS; // unmapped
+    if (f_ram) begin
+      imem_data = ram_fdata;
+      imem_error = ram_ferror;
+    end
+    else if (f_rom) begin
+      imem_data = rom_fdata;
+      imem_error = rom_ferror;
+    end
+  end
+
+  always @* begin
+    mem_rdata = '0;
+    mem_error = NO_MEM_ERROR;
+    if (mem_read || mem_write) begin
+      mem_error = OUT_OF_BOUNDS; // unmapped
+      if (d_ram) begin
+        mem_rdata = ram_rdata;
+        mem_error = ram_error;
+      end
+      else if (d_rom) begin
+        mem_rdata = rom_rdata;
+        mem_error = mem_write ? OUT_OF_BOUNDS : rom_error; // read only
+      end
+    end
+  end
 
 endmodule

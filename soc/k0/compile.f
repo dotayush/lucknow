@@ -6,3 +6,5 @@
 ./core/regfile.sv
 ./core/csrfile.sv
 ./core/control.sv
+./bus.sv
+./core/soc.sv
