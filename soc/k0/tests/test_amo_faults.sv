@@ -56,7 +56,7 @@ module test_amo_faults;
     program_words[10] = 32'h00208213; // addi  x4, x1, 2      misaligned word address
     program_words[11] = 32'h40000493; // addi  x9, x0, 0x400
     program_words[12] = 32'h000014b7; // lui   x9, 1          x9 = 0x1000, the rom
-    program_words[13] = 32'h10000737; // lui   x14, 0x10000   x14 = 0x1000_0000, unmapped
+    program_words[13] = 32'h20000737; // lui   x14, 0x20000   x14 = 0x2000_0000, unmapped
     program_words[14] = 32'h100222af; // lr.w  x5, (x4)       load misaligned
     program_words[15] = 32'h1822232f; // sc.w  x6, x2, (x4)   store/amo misaligned
     program_words[16] = 32'h002223af; // amoadd.w x7, x2, (x4) store/amo misaligned
@@ -111,8 +111,8 @@ module test_amo_faults;
     exp_cause[2] = 6; exp_mtval[2] = RAM_BASE + 2;   // sc.w misaligned: store/amo address misaligned, even without reservation
     exp_cause[3] = 6; exp_mtval[3] = RAM_BASE + 2;   // amoadd.w misaligned
     exp_cause[4] = 7; exp_mtval[4] = 32'h0000_1000;  // amoadd.w to the rom: store/amo access fault
-    exp_cause[5] = 7; exp_mtval[5] = 32'h1000_0000;  // amoswap.w unmapped
-    exp_cause[6] = 5; exp_mtval[6] = 32'h1000_0000;  // lr.w unmapped: load access fault
+    exp_cause[5] = 7; exp_mtval[5] = 32'h2000_0000;  // amoswap.w unmapped
+    exp_cause[6] = 5; exp_mtval[6] = 32'h2000_0000;  // lr.w unmapped: load access fault
 
     #1;
     load_program();

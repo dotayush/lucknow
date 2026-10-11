@@ -42,6 +42,7 @@ module test_bus;
   wire [31:0] mem_rdata;
   wire mem_ready;
   wire [1:0] mem_error;
+  wire uart_tx;
 
   bus #(
     .ROM_BASE(ROM_BASE), .ROM_WORDS(ROM_WORDS),
@@ -50,7 +51,8 @@ module test_bus;
     .clk(clk), .rst_n(rst_n),
     .imem_addr(imem_addr), .imem_data(imem_data), .imem_ready(imem_ready), .imem_error(imem_error),
     .mem_read(mem_read), .mem_write(mem_write), .mem_access_type(mem_access_type),
-    .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_rdata(mem_rdata), .mem_ready(mem_ready), .mem_error(mem_error)
+    .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_rdata(mem_rdata), .mem_ready(mem_ready), .mem_error(mem_error),
+    .uart_tx(uart_tx)
   );
 
   // ---- dut with wait states
@@ -60,11 +62,13 @@ module test_bus;
   wire [1:0] s_imem_error;
   reg s_mem_read;
   reg s_mem_write;
+  reg [1:0] s_mem_access_type;
   reg [31:0] s_mem_addr;
   reg [31:0] s_mem_wdata;
   wire [31:0] s_mem_rdata;
   wire s_mem_ready;
   wire [1:0] s_mem_error;
+  wire s_uart_tx;
 
   bus #(
     .ROM_BASE(ROM_BASE), .ROM_WORDS(ROM_WORDS),
@@ -73,8 +77,9 @@ module test_bus;
   ) slow (
     .clk(clk), .rst_n(rst_n),
     .imem_addr(s_imem_addr), .imem_data(s_imem_data), .imem_ready(s_imem_ready), .imem_error(s_imem_error),
-    .mem_read(s_mem_read), .mem_write(s_mem_write), .mem_access_type(2'b10),
-    .mem_addr(s_mem_addr), .mem_wdata(s_mem_wdata), .mem_rdata(s_mem_rdata), .mem_ready(s_mem_ready), .mem_error(s_mem_error)
+    .mem_read(s_mem_read), .mem_write(s_mem_write), .mem_access_type(s_mem_access_type),
+    .mem_addr(s_mem_addr), .mem_wdata(s_mem_wdata), .mem_rdata(s_mem_rdata), .mem_ready(s_mem_ready), .mem_error(s_mem_error),
+    .uart_tx(s_uart_tx)
   );
 
   // ---- helpers
@@ -149,6 +154,7 @@ module test_bus;
     s_imem_addr = RAM_BASE;
     s_mem_read = 0;
     s_mem_write = 0;
+    s_mem_access_type = WORD_MEM_ACCESS;
     s_mem_addr = RAM_BASE;
     s_mem_wdata = '0;
 
@@ -195,14 +201,33 @@ module test_bus;
     load(RAM_BASE - 4, WORD_MEM_ACCESS, 32'h0, OUT_OF_BOUNDS, "just below ram");
     load(RAM_BASE + 4*RAM_WORDS, WORD_MEM_ACCESS, 32'h0, OUT_OF_BOUNDS, "just above ram");
     load(32'hFFFF_FFFC, WORD_MEM_ACCESS, 32'h0, OUT_OF_BOUNDS, "top of address space");
-    store(32'h1000_0000, WORD_MEM_ACCESS, 32'hFFFFFFFF, OUT_OF_BOUNDS, "unmapped");
+    store(32'h2000_0000, WORD_MEM_ACCESS, 32'hFFFFFFFF, OUT_OF_BOUNDS, "unmapped");
     store(RAM_BASE + 4*RAM_WORDS, WORD_MEM_ACCESS, 32'hFFFFFFFF, OUT_OF_BOUNDS, "past ram");
     store(RAM_BASE - 4, WORD_MEM_ACCESS, 32'hFFFFFFFF, OUT_OF_BOUNDS, "before ram");
     load(RAM_BASE, WORD_MEM_ACCESS, 32'h11BBCCDD, NO_MEM_ERROR, "ram untouched by faulting stores");
     load(RAM_BASE + 4*(RAM_WORDS-1), WORD_MEM_ACCESS, 32'h01234567, NO_MEM_ERROR, "ram end untouched");
     fetch(32'h0000_0000, 32'h0, OUT_OF_BOUNDS, "unmapped");
     fetch(RAM_BASE + 4*RAM_WORDS, 32'h0, OUT_OF_BOUNDS, "past ram");
-    fetch(32'h1000_0000, 32'h0, OUT_OF_BOUNDS, "device area");
+    fetch(32'h1000_0000, 32'h0, OUT_OF_BOUNDS, "uart (data port only)");
+    fetch(32'h2000_0000, 32'h0, OUT_OF_BOUNDS, "unmapped");
+
+    // uart: byte registers only, the registers repeat inside the window
+    load(32'h1000_0005, BYTE_MEM_ACCESS, 32'h00000060, NO_MEM_ERROR, "uart LSR idle");
+    load(32'h1000_0002, BYTE_MEM_ACCESS, 32'h00000001, NO_MEM_ERROR, "uart IIR");
+    store(32'h1000_0007, BYTE_MEM_ACCESS, 32'h0000005A, NO_MEM_ERROR, "uart SCR");
+    load(32'h1000_0007, BYTE_MEM_ACCESS, 32'h0000005A, NO_MEM_ERROR, "uart SCR readback");
+    load(32'h1000_00FF, BYTE_MEM_ACCESS, 32'h0000005A, NO_MEM_ERROR, "uart SCR mirror at the end of the window");
+    load(32'h1000_0100, BYTE_MEM_ACCESS, 32'h0, OUT_OF_BOUNDS, "just above the uart window");
+    load(32'h0FFF_FFFF, BYTE_MEM_ACCESS, 32'h0, OUT_OF_BOUNDS, "just below the uart window");
+    load(32'h1000_0004, WORD_MEM_ACCESS, 32'h0, OUT_OF_BOUNDS, "uart word load");
+    load(32'h1000_0004, HALF_MEM_ACCESS, 32'h0, OUT_OF_BOUNDS, "uart half load");
+    store(32'h1000_0000, WORD_MEM_ACCESS, 32'h00000041, OUT_OF_BOUNDS, "uart word store");
+    store(32'h1000_0000, HALF_MEM_ACCESS, 32'h00000041, OUT_OF_BOUNDS, "uart half store");
+    load(32'h1000_0005, BYTE_MEM_ACCESS, 32'h00000060, NO_MEM_ERROR, "uart idle after the faulting stores");
+    expect_bit(uart_tx, 1'b1, "uart line idle after the faulting stores");
+    store(32'h1000_0000, BYTE_MEM_ACCESS, 32'h00000041, NO_MEM_ERROR, "uart THR");
+    load(32'h1000_0005, BYTE_MEM_ACCESS, 32'h00000000, NO_MEM_ERROR, "uart LSR busy after a THR store");
+    expect_bit(uart_tx, 1'b0, "uart start bit");
 
     // misaligned accesses fault inside the regions
     load(RAM_BASE + 2, WORD_MEM_ACCESS, 32'h0, ADDRESS_MISALIGNED, "ram");
@@ -274,6 +299,24 @@ module test_bus;
     s_mem_read = 0;
     #1;
     expect_bit(s_mem_ready, 1'b1, "idle data port is ready");
+
+    // a uart register write lands once, on the completing edge, after the wait
+    @(posedge clk); #1;
+    s_mem_addr = 32'h1000_0000;
+    s_mem_wdata = 32'h00000042;
+    s_mem_write = 1;
+    s_mem_access_type = BYTE_MEM_ACCESS;
+    #1;
+    expect_bit(s_mem_ready, 1'b0, "uart store ready in cycle 0");
+    repeat (3) begin
+      @(posedge clk); #1;
+    end
+    expect_bit(s_mem_ready, 1'b1, "uart store ready in cycle 3");
+    expect_bit(slow.uart_inst.busy, 1'b0, "uart not started before the completing edge");
+    @(posedge clk); #1;
+    expect_bit(slow.uart_inst.busy, 1'b1, "uart started on the completing edge");
+    s_mem_write = 0;
+    s_mem_access_type = WORD_MEM_ACCESS;
 
     // a faulting access completes (with its error) after the same wait
     @(posedge clk); #1;

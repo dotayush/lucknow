@@ -44,15 +44,22 @@ endmodule
 //
 //   ROM_BASE  boot rom, read only
 //   RAM_BASE  ram, the instruction port and the data port see the same words
+//   UART_BASE uart (16550 register layout, UART_SIZE bytes, registers repeat), byte accesses
+//             only, data port only
 //
-// anything else is an access fault (OUT_OF_BOUNDS), as is a store to the rom and a fetch
-// that isn't word aligned. the ports mirror control's: imem_* for fetch, mem_* for data.
+// anything else is an access fault (OUT_OF_BOUNDS), as is a store to the rom, a word or
+// halfword access to the uart and a fetch that isn't word aligned. the ports mirror
+// control's: imem_* for fetch, mem_* for data.
 module bus #(
   parameter DATA_WIDTH = 32,
   parameter [DATA_WIDTH-1:0] ROM_BASE = 32'h0000_1000,
   parameter int ROM_WORDS = 1024,
   parameter [DATA_WIDTH-1:0] RAM_BASE = 32'h8000_0000,
   parameter int RAM_WORDS = 8192,
+  parameter [DATA_WIDTH-1:0] UART_BASE = 32'h1000_0000,
+  parameter int UART_SIZE = 256,
+  parameter int UART_CLKS_PER_BIT = 8,
+  parameter bit UART_ECHO = 0,
   parameter ROM_INIT = "./memory/bootrom.hex",
   parameter RAM_INIT = "",
   parameter int FETCH_WAIT = 0, // wait cycles added to every new fetch
@@ -75,7 +82,10 @@ module bus #(
   input wire [DATA_WIDTH-1:0] mem_wdata,
   output reg [DATA_WIDTH-1:0] mem_rdata,
   output wire mem_ready,
-  output reg [1:0] mem_error
+  output reg [1:0] mem_error,
+
+  // serial console
+  output wire uart_tx
 );
 
   // fetch side regions
@@ -84,6 +94,7 @@ module bus #(
   // data side regions
   wire d_rom = (mem_addr >= ROM_BASE) && ((mem_addr - ROM_BASE) < ROM_WORDS * 4);
   wire d_ram = (mem_addr >= RAM_BASE) && ((mem_addr - RAM_BASE) < RAM_WORDS * 4);
+  wire d_uart = (mem_addr >= UART_BASE) && ((mem_addr - UART_BASE) < UART_SIZE);
 
   wire [DATA_WIDTH-1:0] rom_rdata, ram_rdata, rom_fdata, ram_fdata;
   wire [1:0] rom_error, ram_error, rom_ferror, ram_ferror;
@@ -135,6 +146,23 @@ module bus #(
     .fetch_error(ram_ferror)
   );
 
+  // uart: register access completes on the edge that completes the transfer, like a ram write
+  wire [7:0] uart_rdata;
+  wire uart_byte = (mem_access_type == BYTE_MEM_ACCESS);
+  uart #(
+    .CLKS_PER_BIT(UART_CLKS_PER_BIT),
+    .ECHO(UART_ECHO)
+  ) uart_inst (
+    .clk(clk),
+    .rst_n(rst_n),
+    .sel((mem_read || (mem_write && mem_ready)) && d_uart && uart_byte),
+    .write(mem_write),
+    .reg_addr(mem_addr[2:0]),
+    .wdata(mem_wdata[7:0]),
+    .rdata(uart_rdata),
+    .tx(uart_tx)
+  );
+
   always @* begin
     imem_data = '0;
     imem_error = OUT_OF_BOUNDS; // unmapped
@@ -160,6 +188,10 @@ module bus #(
       else if (d_rom) begin
         mem_rdata = rom_rdata;
         mem_error = mem_write ? OUT_OF_BOUNDS : rom_error; // read only
+      end
+      else if (d_uart && uart_byte) begin
+        mem_rdata = {24'h0, uart_rdata};
+        mem_error = NO_MEM_ERROR;
       end
     end
   end

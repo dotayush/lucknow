@@ -5,10 +5,13 @@ module soc #(
   parameter RAM_INIT = "", // program image, loaded at the ram base
   parameter int RAM_WORDS = 8192,
   parameter int FETCH_WAIT = 0, // see bus
-  parameter int DATA_WAIT = 0
+  parameter int DATA_WAIT = 0,
+  parameter int UART_CLKS_PER_BIT = 8,
+  parameter bit UART_ECHO = 0 // print what the uart sends, in simulation
 )(
   input wire clk,
-  input wire rst_n
+  input wire rst_n,
+  output wire uart_tx
 );
 
   wire [DATA_WIDTH-1:0] imem_addr;
@@ -51,7 +54,9 @@ module soc #(
     .RAM_INIT(RAM_INIT),
     .RAM_WORDS(RAM_WORDS),
     .FETCH_WAIT(FETCH_WAIT),
-    .DATA_WAIT(DATA_WAIT)
+    .DATA_WAIT(DATA_WAIT),
+    .UART_CLKS_PER_BIT(UART_CLKS_PER_BIT),
+    .UART_ECHO(UART_ECHO)
   ) bus_inst (
     .clk(clk),
     .rst_n(rst_n),
@@ -66,7 +71,8 @@ module soc #(
     .mem_wdata(mem_data_out),
     .mem_rdata(mem_data_in),
     .mem_ready(mem_ready),
-    .mem_error(mem_error)
+    .mem_error(mem_error),
+    .uart_tx(uart_tx)
   );
 
 endmodule
