@@ -7,3 +7,4 @@
 /core/l0/riscv/build
 /soc/k0/riscv/build
 /soc/k0/programs/build
+*.pdf
