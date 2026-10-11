@@ -137,8 +137,24 @@ package isa_shared;
     LUI = 7'b0110111, // Load Upper Immediate Instruction
     AUIPC = 7'b0010111, // Add Upper Immediate to PC Instruction
     FENCE = 7'b0001111, // Fence instruction
+    AMO = 7'b0101111, // Atomic instructions (a extension)
     SYSTEM = 7'b1110011 // Environment Call and Breakpoint, CSR etc.
   } opcode_e;
+
+  // a extension, instruction[31:27]. all of them are .w (f3 = 010)
+  typedef enum logic [4:0] {
+    AMO_ADD = 5'b00000, // Atomic add
+    AMO_SWAP = 5'b00001, // Atomic swap
+    AMO_LR = 5'b00010, // Load reserved
+    AMO_SC = 5'b00011, // Store conditional
+    AMO_XOR = 5'b00100, // Atomic xor
+    AMO_OR = 5'b01000, // Atomic or
+    AMO_AND = 5'b01100, // Atomic and
+    AMO_MIN = 5'b10000, // Atomic signed minimum
+    AMO_MAX = 5'b10100, // Atomic signed maximum
+    AMO_MINU = 5'b11000, // Atomic unsigned minimum
+    AMO_MAXU = 5'b11100 // Atomic unsigned maximum
+  } amo_function5_e;
 
   typedef enum logic [1:0] {
     BYTE_MEM_ACCESS = 2'b00, // Byte access

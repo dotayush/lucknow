@@ -84,9 +84,9 @@ module test_csrfile;
     csr_addr = CSR_ISA;
     csr_op = CSR_NOP;
     #1;
-    if (csr_rdata !== 32'h40001100) begin
+    if (csr_rdata !== 32'h40001101) begin
       test_failed = 1;
-      $display("[%0t] error: read CSR_MISA failed: expected=0x%08x, got=0x%08x", $time, 32'h40001100, csr_rdata);
+      $display("[%0t] error: read CSR_MISA failed: expected=0x%08x, got=0x%08x", $time, 32'h40001101, csr_rdata);
     end else begin
       $display("[%0t] OK: read CSR_MISA data=0x%08x", $time, csr_rdata);
     end

@@ -112,6 +112,18 @@ module decoder #(parameter DATA_WIDTH = 32) (
         unextended_data = instruction[31:12] << 12;
         reg_write = 1;
       end
+      AMO: begin
+        // lr/sc/amo: address is rs1 (no immediate). all three memory flags are raised,
+        // control picks what the operation really does from f7[6:2]
+        rd = instruction[11:7];
+        rs1 = instruction[19:15];
+        rs2 = instruction[24:20];
+        f3 = instruction[14:12];
+        f7 = instruction[31:25];
+        reg_write = 1;
+        mem_read = 1;
+        mem_write = 1;
+      end
       FENCE: begin
         // FENCE is a no-op in this implementation.
         // It is used when synchronizing memory operations in a multi-core

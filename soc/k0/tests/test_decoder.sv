@@ -83,7 +83,7 @@ module test_decoder;
 
   localparam [6:0] OP_LOAD = 7'b0000011, OP_STORE = 7'b0100011, OP_BRANCH = 7'b1100011, OP_JAL = 7'b1101111,
                    OP_JALR = 7'b1100111, OP_IMM = 7'b0010011, OP_REG = 7'b0110011, OP_LUI = 7'b0110111,
-                   OP_AUIPC = 7'b0010111, OP_FENCE = 7'b0001111, OP_SYSTEM = 7'b1110011;
+                   OP_AUIPC = 7'b0010111, OP_AMO = 7'b0101111, OP_FENCE = 7'b0001111, OP_SYSTEM = 7'b1110011;
 
   initial begin
     $dumpfile("./tests/results/test_decoder.vcd");
@@ -111,6 +111,12 @@ module test_decoder;
     check("mulhu x3, x1, x2",  32'h0220b1b3, OP_REG,    0, 1, 0, 1,  2,  3,  3'b011, 7'b0000001, isa_shared::SX_NOP, 32'h0,        12'h0,   5'd0);
     check("div x3, x1, x2",    32'h0220c1b3, OP_REG,    0, 1, 0, 1,  2,  3,  3'b100, 7'b0000001, isa_shared::SX_NOP, 32'h0,        12'h0,   5'd0);
     check("remu x3, x1, x2",   32'h0220f1b3, OP_REG,    0, 1, 0, 1,  2,  3,  3'b111, 7'b0000001, isa_shared::SX_NOP, 32'h0,        12'h0,   5'd0);
+    // a extension: all three memory flags are raised, control decides from f7[6:2]
+    check("lr.w x18, (x17)",       32'h1008a92f, OP_AMO, 1, 1, 1, 17, 0,  18, 3'b010, 7'b0001000, isa_shared::SX_NOP, 32'h0, 12'h0, 5'd0);
+    check("sc.w x19, x20, (x17)",  32'h1948a9af, OP_AMO, 1, 1, 1, 17, 20, 19, 3'b010, 7'b0001100, isa_shared::SX_NOP, 32'h0, 12'h0, 5'd0);
+    check("amoadd.w x22,x20,(x17)",32'h0148ab2f, OP_AMO, 1, 1, 1, 17, 20, 22, 3'b010, 7'b0000000, isa_shared::SX_NOP, 32'h0, 12'h0, 5'd0);
+    check("amomin.w x29,x28,(x17)",32'h81c8aeaf, OP_AMO, 1, 1, 1, 17, 28, 29, 3'b010, 7'b1000000, isa_shared::SX_NOP, 32'h0, 12'h0, 5'd0);
+    check("amomaxu.w x26,x16,(x17)",32'he108ad2f, OP_AMO, 1, 1, 1, 17, 16, 26, 3'b010, 7'b1110000, isa_shared::SX_NOP, 32'h0, 12'h0, 5'd0);
     // the whole 32 bit value is forwarded, the upper 20 bits must survive.
     check("lui x7, 0xabcde",   32'habcde3b7, OP_LUI,    0, 1, 0, 0,  0,  7,  3'b000, 7'b0,      isa_shared::SX_3100, 32'habcde000, 12'h0,   5'd0);
     check("auipc x12,0x12345", 32'h12345617, OP_AUIPC,  0, 1, 0, 0,  0,  12, 3'b000, 7'b0,      isa_shared::SX_3100, 32'h12345000, 12'h0,   5'd0);

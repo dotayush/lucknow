@@ -88,9 +88,31 @@ module control #(
   reg illegal; // the instruction is not a valid RV32I/Zicsr instruction
   wire illegal_store = dec_mem_write && (f3 != S_SW && f3 != S_SH && f3 != S_SB); // reserved store width, must not write
   wire illegal_load = dec_mem_read && (f3 != I_LW && f3 != I_LH && f3 != I_LB && f3 != I_LBU && f3 != I_LHU); // reserved load width
-  wire data_req = (dec_mem_read && !illegal_load || dec_mem_write && !illegal_store) && imem_ready;
+
+  // a extension. lr is one read, sc is one write (or nothing when it fails), the amos are a read
+  // followed by a write of the new value, two transfers of the same instruction.
+  wire is_amo = (opcode == AMO);
+  wire [4:0] f5 = f7[6:2];
+  wire is_lr = is_amo && (f5 == AMO_LR);
+  wire is_sc = is_amo && (f5 == AMO_SC);
+  wire is_rmw = is_amo && (f5 == AMO_SWAP || f5 == AMO_ADD || f5 == AMO_XOR || f5 == AMO_AND || f5 == AMO_OR ||
+                           f5 == AMO_MIN || f5 == AMO_MAX || f5 == AMO_MINU || f5 == AMO_MAXU);
+  wire illegal_amo = is_amo && (f3 != 3'b010 || !(is_lr || is_sc || is_rmw) || (is_lr && rs2 != 0));
+  reg amo_phase; // read-modify-write: 0 = reading the old value, 1 = writing the new one
+  reg [DATA_WIDTH-1:0] amo_old; // the value read in phase 0
+  reg resv_valid; // lr/sc reservation, one word
+  reg [DATA_WIDTH-1:0] resv_addr;
+  wire sc_ok = is_sc && resv_valid && (resv_addr == rs1_data);
+  wire amo_misaligned = (rs1_data[1:0] != 2'b00); // a misaligned sc must fault even when it would fail
+
+  wire req_read = is_amo ? (!illegal_amo && (is_lr || (is_rmw && !amo_phase))) : (dec_mem_read && !illegal_load);
+  wire req_write = is_amo ? (!illegal_amo && ((is_sc && (sc_ok || amo_misaligned)) || (is_rmw && amo_phase)))
+                          : (dec_mem_write && !illegal_store);
+  wire data_req = (req_read || req_write) && imem_ready;
+  // an amo read that came back fine is not the end of the instruction, the write is still to do
+  wire rmw_next = is_rmw && !illegal_amo && !amo_phase && imem_ready && mem_ready && (mem_error == NO_MEM_ERROR);
   // the whole core waits (pc, registers, csrs, memory are not updated) until the instruction and its data are there
-  wire stall = !imem_ready || (data_req && !mem_ready);
+  wire stall = !imem_ready || (data_req && !mem_ready) || rmw_next;
   wire csr_to_rd = (opcode == SYSTEM) && (f3 != SYS_ECALL_EBREAK); // csr instructions return the old csr value in rd
 
   logic [DATA_WIDTH-1:0] temp;
@@ -99,8 +121,8 @@ module control #(
   assign data_out = mem_data_in;
   assign mem_addr = addr;
   assign mem_data_out = data_in;
-  assign mem_read = dec_mem_read && !illegal_load && imem_ready;
-  assign mem_write = dec_mem_write && !illegal_store && imem_ready;
+  assign mem_read = req_read && imem_ready;
+  assign mem_write = req_write && imem_ready;
 
   // the instruction side is a plain port too
   assign instruction = imem_data;
@@ -112,6 +134,33 @@ module control #(
       pc <= RESET_VECTOR;
     end else begin
       pc <= next_pc;
+    end
+  end
+
+  // atomics state: which half of a read-modify-write is going on, and the reservation
+  wire store_like = is_amo ? (is_sc || is_rmw) : dec_mem_write; // anything that may write memory kills a reservation
+  always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      amo_phase <= 0;
+      amo_old <= 0;
+      resv_valid <= 0;
+      resv_addr <= 0;
+    end else begin
+      if (rmw_next) begin
+        amo_phase <= 1;
+        amo_old <= mem_data_in;
+      end
+      else if (!stall) begin
+        amo_phase <= 0;
+      end
+
+      if (!stall) begin
+        if (trap || mret || store_like) resv_valid <= 0;
+        if (is_lr && !illegal_amo && !trap) begin
+          resv_valid <= 1;
+          resv_addr <= rs1_data;
+        end
+      end
     end
   end
 
@@ -149,7 +198,65 @@ module control #(
     env_cause = TRAP_NONE;
     temp = '0;
 
-    if (!reg_write && dec_mem_write && !dec_mem_read) begin
+    if (is_amo) begin
+      // ATOMICS => address is rs1 as is
+      l_addr = rs1_data;
+      l_mem_access_type = WORD_MEM_ACCESS;
+      if (illegal_amo) begin
+        illegal = 1;
+      end
+      else if (is_lr) begin
+        rd_data = data_out;
+      end
+      else if (is_sc) begin
+        data_in = rs2_data;
+        rd_data = sc_ok ? 32'd0 : 32'd1; // 0 = success
+      end
+      else begin
+        // read-modify-write: rd gets the old value, memory gets the new one in phase 1
+        l_alu_a = amo_old;
+        l_alu_b = rs2_data;
+        rd_data = amo_old;
+        case (f5)
+          AMO_SWAP: data_in = rs2_data;
+          AMO_ADD: begin
+            l_alu_op = ALU_ADD;
+            data_in = alu_result;
+          end
+          AMO_XOR: begin
+            l_alu_op = ALU_XOR;
+            data_in = alu_result;
+          end
+          AMO_AND: begin
+            l_alu_op = ALU_AND;
+            data_in = alu_result;
+          end
+          AMO_OR: begin
+            l_alu_op = ALU_OR;
+            data_in = alu_result;
+          end
+          AMO_MIN: begin
+            l_alu_op = ALU_LT;
+            data_in = (alu_result == 1) ? amo_old : rs2_data;
+          end
+          AMO_MAX: begin
+            l_alu_op = ALU_GE;
+            data_in = (alu_result == 1) ? amo_old : rs2_data;
+          end
+          AMO_MINU: begin
+            l_alu_op = ALU_LTU;
+            data_in = (alu_result == 1) ? amo_old : rs2_data;
+          end
+          AMO_MAXU: begin
+            l_alu_op = ALU_GEU;
+            data_in = (alu_result == 1) ? amo_old : rs2_data;
+          end
+          default: begin
+          end
+        endcase
+      end
+    end
+    else if (!reg_write && dec_mem_write && !dec_mem_read) begin
       // STORE operations => data_memory[rs1_data + sign_extend(immediate)] = sign_extended(rs2_data);
       l_alu_op = ALU_ADD;
       l_alu_a = rs1_data; // rs1 is set by decoder, so rs1_data = register_mem[rs1]
@@ -588,7 +695,7 @@ module control #(
     else if (mem_error != NO_MEM_ERROR) begin
       trap = 1;
       trap_value = addr;
-      if (dec_mem_read) begin
+      if (is_amo ? is_lr : dec_mem_read) begin // sc and amos report as stores
         trap_cause = (mem_error == OUT_OF_BOUNDS) ? TRAP_LOAD_ACCESS_FAULT : TRAP_LOAD_ADDR_MISALIGNED;
       end else begin
         trap_cause = (mem_error == OUT_OF_BOUNDS) ? TRAP_STORE_ACCESS_FAULT : TRAP_STORE_ADDR_MISALIGNED;

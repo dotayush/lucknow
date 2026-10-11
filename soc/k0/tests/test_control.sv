@@ -9,7 +9,7 @@ module test_control;
 
   localparam real CLK_PERIOD = 10.0; // 100 MHz clock
   localparam real CLK_HALF_PERIOD = CLK_PERIOD / 2.0;
-  localparam [31:0] SPIN_PC = 32'h8000_0048; // the jal x0, 0 at the end of the program
+  localparam [31:0] SPIN_PC = 32'h8000_0094; // the jal x0, 0 at the end of the program
   reg test_failed;
   task finish;
     begin
@@ -88,8 +88,28 @@ module test_control;
       fast.bus_inst.ram_inst.mem[15] = 32'h10150683; // lb   x13, 257(x10)
       fast.bus_inst.ram_inst.mem[16] = 32'h00178793; // addi x15, x15, 1       (counts: retiring twice would show)
       fast.bus_inst.ram_inst.mem[17] = 32'h00178793; // addi x15, x15, 1
-      fast.bus_inst.ram_inst.mem[18] = 32'h0000006f; // jal  x0, 0             (spin)
-      for (int i = 0; i <= 18; i = i + 1) slow.bus_inst.ram_inst.mem[i] = fast.bus_inst.ram_inst.mem[i];
+      // a extension, on the word at ram base + 512
+      fast.bus_inst.ram_inst.mem[18] = 32'h06400813; // addi x16, x0, 100
+      fast.bus_inst.ram_inst.mem[19] = 32'h20050893; // addi x17, x10, 512
+      fast.bus_inst.ram_inst.mem[20] = 32'h0108a023; // sw   x16, 0(x17)
+      fast.bus_inst.ram_inst.mem[21] = 32'h1008a92f; // lr.w x18, (x17)         x18 = 100
+      fast.bus_inst.ram_inst.mem[22] = 32'h00700a13; // addi x20, x0, 7
+      fast.bus_inst.ram_inst.mem[23] = 32'h1948a9af; // sc.w x19, x20, (x17)    succeeds: x19 = 0, mem = 7
+      fast.bus_inst.ram_inst.mem[24] = 32'h1948aaaf; // sc.w x21, x20, (x17)    no reservation left: x21 = 1
+      fast.bus_inst.ram_inst.mem[25] = 32'h0148ab2f; // amoadd.w x22, x20, (x17)  x22 = 7,  mem = 14
+      fast.bus_inst.ram_inst.mem[26] = 32'h0908abaf; // amoswap.w x23, x16, (x17) x23 = 14, mem = 100
+      fast.bus_inst.ram_inst.mem[27] = 32'h1008ac2f; // lr.w x24, (x17)         x24 = 100
+      fast.bus_inst.ram_inst.mem[28] = 32'h0148a023; // sw   x20, 0(x17)        a store kills the reservation, mem = 7
+      fast.bus_inst.ram_inst.mem[29] = 32'h1908acaf; // sc.w x25, x16, (x17)    fails: x25 = 1, mem stays 7
+      fast.bus_inst.ram_inst.mem[30] = 32'he108ad2f; // amomaxu.w x26, x16, (x17) x26 = 7,  mem = 100
+      fast.bus_inst.ram_inst.mem[31] = 32'hfff00e13; // addi x28, x0, -1
+      fast.bus_inst.ram_inst.mem[32] = 32'h81c8aeaf; // amomin.w  x29, x28, (x17) x29 = 100, mem = -1 (signed)
+      fast.bus_inst.ram_inst.mem[33] = 32'hc108af2f; // amominu.w x30, x16, (x17) x30 = -1,  mem = 100 (unsigned)
+      fast.bus_inst.ram_inst.mem[34] = 32'h1008a02f; // lr.w x0, (x17)
+      fast.bus_inst.ram_inst.mem[35] = 32'h00488f93; // addi x31, x17, 4
+      fast.bus_inst.ram_inst.mem[36] = 32'h194fadaf; // sc.w x27, x20, (x31)    other address: fails, x27 = 1
+      fast.bus_inst.ram_inst.mem[37] = 32'h0000006f; // jal  x0, 0             (spin)
+      for (int i = 0; i <= 37; i = i + 1) slow.bus_inst.ram_inst.mem[i] = fast.bus_inst.ram_inst.mem[i];
     end
   endtask
 
@@ -110,6 +130,19 @@ module test_control;
       check_reg(who, 12, 32'd9); // new mscratch
       check_reg(who, 13, 32'd5); // lb of the stored byte
       check_reg(who, 15, 32'd2); // each addi retired exactly once, however long it waited
+      check_reg(who, 17, 32'h8000_0200);
+      check_reg(who, 18, 32'd100);
+      check_reg(who, 19, 32'd0); // sc after lr
+      check_reg(who, 21, 32'd1); // sc without a reservation
+      check_reg(who, 22, 32'd7); // amoadd returns the old value
+      check_reg(who, 23, 32'd14);
+      check_reg(who, 24, 32'd100);
+      check_reg(who, 25, 32'd1); // sc after a store
+      check_reg(who, 26, 32'd7);
+      check_reg(who, 27, 32'd1); // sc to another address than the lr
+      check_reg(who, 28, 32'hFFFF_FFFF);
+      check_reg(who, 29, 32'd100);
+      check_reg(who, 30, 32'hFFFF_FFFF);
     end
   endtask
 
@@ -133,7 +166,7 @@ module test_control;
     #1;
     load_program();
 
-    repeat (400) @(negedge clk);
+    repeat (700) @(negedge clk);
 
     expect_regs("fast");
     expect_regs("slow");
@@ -142,6 +175,18 @@ module test_control;
     if (fast.bus_inst.ram_inst.mem[64] !== 32'h0000_050c || slow.bus_inst.ram_inst.mem[64] !== 32'h0000_050c) begin
       test_failed = 1;
       $display("[%0t] error: ram word 64 expected=0x0000050c, fast=0x%08x slow=0x%08x", $time, fast.bus_inst.ram_inst.mem[64], slow.bus_inst.ram_inst.mem[64]);
+    end
+
+    // the failed sc did not write its word
+    if (fast.bus_inst.ram_inst.mem[129] !== 32'd0 || slow.bus_inst.ram_inst.mem[129] !== 32'd0) begin
+      test_failed = 1;
+      $display("[%0t] error: failed sc wrote memory, fast=%0d slow=%0d", $time, fast.bus_inst.ram_inst.mem[129], slow.bus_inst.ram_inst.mem[129]);
+    end
+
+    // every atomic landed exactly once: the word ends at 100
+    if (fast.bus_inst.ram_inst.mem[128] !== 32'd100 || slow.bus_inst.ram_inst.mem[128] !== 32'd100) begin
+      test_failed = 1;
+      $display("[%0t] error: atomic word expected=100, fast=%0d slow=%0d", $time, fast.bus_inst.ram_inst.mem[128], slow.bus_inst.ram_inst.mem[128]);
     end
 
     // both reached the spin, the slow one later, and neither trapped

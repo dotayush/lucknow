@@ -42,7 +42,7 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096) (
           CSR_MARCHID: csr_array[i] <= 32'h00000000;
           CSR_MIMPID: csr_array[i] <= 32'h00000000;
           CSR_MHARTID: csr_array[i] <= 32'h00000000;
-          CSR_ISA: csr_array[i] <= 32'h40001100; // 32-bit (31:30), RV32I (bit 8), M (bit 12)
+          CSR_ISA: csr_array[i] <= 32'h40001101; // 32-bit (31:30), RV32I (bit 8), M (bit 12), A (bit 0)
           CSR_MTVEC: csr_array[i] <= 32'h00000000; // default trap vector
           CSR_MSTATUS: csr_array[i] <= 32'h00001800; // MPP = 11 (M-mode), MPIE = 0, MIE = 0
           default: csr_array[i] <= 'b0;
