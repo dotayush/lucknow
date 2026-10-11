@@ -6,18 +6,20 @@ timer ticks, a userspace `init` runs and prints, then a small shell takes typed 
 
 ## Status
 
-Done: Linux 6.12.112 (no MMU, M-mode kernel build) boots on k0 in the Verilator model to a shell
-on the uart and runs commands typed at it. `linux/test.sh` checks that.
+Done: Linux 6.12.112 (no MMU, M-mode kernel build) boots on k0 in the Verilator model to a busybox shell
+on the uart and runs commands typed at it, from a script or from your terminal (`linux/shell.sh`). The same
+image on QEMU gives the same output (`linux/qemu.sh`). `linux/test.sh` and `linux/test_busybox.sh` check it.
+The how-to and the findings are in `LINUX.md`.
 
 | phase | state | notes |
 |---|---|---|
-| 0 toolchain and reference | done, except QEMU | kernel 6.12.112 pinned in `linux/build.sh`. The bare-metal `riscv32-unknown-elf` gcc builds the kernel. No QEMU on this machine, so there was no reference log. The kernel's own `dtc` builds the device tree. `bc` was missing and was built from source |
+| 0 toolchain and reference | done | kernel 6.12.112 pinned in `linux/build.sh`. The bare-metal `riscv32-unknown-elf` gcc builds the kernel. QEMU 10.0 (unpacked from the Debian packages without root) boots the same image and prints the same command output, `linux/qemu.sh`. The kernel's own `dtc` builds the device tree. `bc` was missing and was built from source |
 | 1 boot interface | done | rom sets `a0`, `a1`. `programs/` has no a0/a1 print test, the kernel finding its device tree is the check |
 | 2 ram and simulator | done | 16 MiB ram (8 MiB is not enough for busybox), Verilator model (`sim/`), about 1.7 MIPS. No trace diff against another model yet (the `+trace` option exists) |
-| 3 timer, interrupts, console | done | CLINT timer, PLIC and the 8250 driver (as 16450) work. The kernel probes and emulates misaligned accesses (one trap at boot). Overruns happen if a typed byte arrives before the previous one was read: the uart has no fifo |
+| 3 timer, interrupts, console | done | CLINT timer, PLIC and the 8250 driver work (as `ns16550a` with FIFOs now). The kernel probes and emulates misaligned accesses (one trap at boot). Overruns happen if a typed byte arrives before the previous one was read: the uart has no fifo |
 | 4 user mode | done | the experiment (MPP stuck at `11`) gave `Oops - environment call from M-mode` at the first syscall of `init`, so user mode was needed. Implemented, see `CHIP.md` |
-| 5 userland | partly | initramfs with a freestanding shell as `/init`. No busybox, no libc, no block device |
-| 6 regression | partly | `linux/test.sh`. Kernel and toolchain versions pinned in the scripts, docs updated. riscv-tests pass (also with wait states, `riscv/run.sh`) |
+| 5 userland | done, except storage | busybox and uClibc-ng from Buildroot as flat binaries, several processes, pipes. The cpio is embedded in the kernel, there is no block device |
+| 6 regression | done | `linux/test.sh`, `linux/test_busybox.sh`. Kernel and toolchain versions pinned in the scripts, docs updated. riscv-tests pass (also with wait states, `riscv/run.sh`) |
 
 The rest of this file is the plan as it was written. Items marked **(verify)** were from memory of the kernel
 sources before any of this was tried; the table above and the findings below record what turned out to be true.
@@ -35,7 +37,7 @@ Findings that changed the plan:
 Still open (not needed for the shell, listed in order of usefulness):
 1. ~~busybox and a libc~~ done: Buildroot 2025.02.7, uClibc-ng, busybox as bFLT (elf2flt), `linux/buildroot/build.sh`, `linux/busybox.sh`, `linux/test_busybox.sh`. The shell runs pipes and several processes. Boot to the prompt is 92 million clocks, about a minute in Verilator. Needs 16 MiB of ram (8 MiB left no contiguous block for the 730 KiB busybox).
 2. ~~A FIFO in the uart~~ done: 16 byte FIFOs, `ns16550a`, trigger levels, character timeout. Linux types a whole line with 2 bit times between bytes.
-3. A reference run on QEMU (`qemu-system-riscv32 -M virt` with the same kernel) to diff traces against.
+3. ~~A reference run on QEMU~~ done for command output (`linux/qemu.sh`). Not done: an instruction-by-instruction trace diff against QEMU (`-d exec` against `+trace`).
 4. PMP, so user tasks cannot overwrite the kernel.
 5. Block device or a larger initramfs, FPGA bring-up (clock, memory controller, `timebase-frequency`).
 

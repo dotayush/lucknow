@@ -221,13 +221,16 @@ lowest id on a tie. Only the UART is connected (source 10).
 ## Running Linux
 
 k0 boots a no-MMU Linux 6.12 (M-mode kernel build, `CONFIG_RISCV_M_MODE`, user tasks in user mode)
-to a shell on the uart. Everything for this is in `linux/` and `sim/`, the steps are in `docs/PLAN.md`.
+to a busybox shell on the uart. Everything for this is in `linux/` and `sim/`; how to build and run it is in
+`LINUX.md`, the plan and findings in `PLAN.md`.
 
 - `sim/build.sh` builds a Verilator model of the soc with 16 MiB of ram. `sim/obj/Vsoc` loads binary
   images into ram, drives the uart receive line from a file and prints what the uart sends. Roughly
   1.7 million instructions per second of host time.
 - `linux/build.sh` builds the kernel, the device tree (`k0.dts`) and a small freestanding `init` with a
   shell (`init/init.c`, a bFLT binary, no libc). `linux/run.sh` boots it, `linux/test.sh` boots it and types commands.
+  `linux/buildroot/` builds a busybox and uClibc-ng root filesystem, `linux/busybox.sh` embeds it, `linux/shell.sh` puts
+  your terminal on the uart, `linux/qemu.sh` runs the same image on QEMU as a reference.
 - The kernel needs: `a0` = hart id and `a1` = device tree pointer (the boot rom does that), ram at
   `0x8000_0000`, the kernel linked there, the uart as `ns16550a`, CLINT, PLIC, `timebase-frequency`
   equal to the clock (`mtime` counts clocks). Misaligned loads/stores trap and are emulated by the kernel.
