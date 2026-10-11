@@ -4,6 +4,7 @@
 #   ./programs/run.sh hello
 #   ./programs/run.sh timer
 #   IFLAGS="-Ptest_hello.FETCH_WAIT=2 -Ptest_hello.DATA_WAIT=3" ./programs/run.sh timer   (slow memories)
+#   IFLAGS="-Ptest_hello.RX_GAP=0" ./programs/run.sh uartrx   (bytes back to back)
 # needs riscv32-unknown-elf-gcc (TOOLCHAIN) and iverilog. run from anywhere.
 set -u
 
@@ -25,6 +26,11 @@ EXPECT_FLAGS=
 if [ -f $HERE/$name.expect ]; then
   expected=$(cat $HERE/$name.expect)
   EXPECT_FLAGS="-Ptest_hello.EXPECTED=\"$expected\" -Ptest_hello.LENGTH=${#expected}"
+fi
+# what the program is typed: programs/<name>.input (sent on the uart receive line)
+if [ -f $HERE/$name.input ]; then
+  typed=$(cat $HERE/$name.input)
+  EXPECT_FLAGS="$EXPECT_FLAGS -Ptest_hello.RX_STRING=\"$typed\" -Ptest_hello.RX_LENGTH=${#typed}"
 fi
 iverilog -g2012 -o $BUILD/$name.out -Ptest_hello.IMAGE=\"$BUILD/$name.hex\" $EXPECT_FLAGS ${IFLAGS:-} \
   -c compile.f tests/test_hello.sv || exit 1
