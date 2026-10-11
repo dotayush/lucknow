@@ -91,7 +91,7 @@ module control #(
   logic [DATA_WIDTH-1:0] l_addr;
   logic [1:0] l_mem_access_type;
 
-  always_comb begin
+  always @* begin
     /*
     * is_system => reg_write=0, mem_write=0, mem_read = 0, rd_data=0 (branch (not system but doesn't touch anything else), fence, ecall, break)
     * is_store => reg_write=0, mem_write=1, mem_read = 0, rd_data=0
@@ -491,7 +491,7 @@ module control #(
 
   // trap selection and the final next pc. kept apart from the block above because mem_error depends
   // on the address that block drives.
-  always_comb begin
+  always @* begin
     trap = 0;
     trap_cause = TRAP_NONE;
     trap_value = '0;
