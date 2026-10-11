@@ -4,13 +4,20 @@
 #   ./riscv/run.sh addi lw    run only the named tests
 # the core is the directory above this script (core/l0), or $CORE. it needs a compile.f
 # (rtl only paths + nothing from tests/) and a tests/test_riscv.sv. other cores reuse this
-# script with RV_MARCH (default rv32i_zicsr) and RV_UM=1 (also run rv32um), see soc/k0/riscv/run.sh.
+# script, see soc/k0/riscv/run.sh. knobs (environment):
+#   RV_MARCH     -march for the tests, default rv32i_zicsr
+#   RV_UM=1      also run rv32um
+#   RV_BASE      address the image is linked at (ram base), default 0
+#   RV_UI_SKIP   rv32ui tests not to run
+#   RV_IFLAGS    extra iverilog flags, for example -Ptest_riscv.DATA_WAIT=3
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 CORE=$(cd "${CORE:-$HERE/..}" && pwd)
 RV_MARCH=${RV_MARCH:-rv32i_zicsr}
 RV_UM=${RV_UM:-0}
+RV_BASE=${RV_BASE:-0}
+RV_IFLAGS=${RV_IFLAGS:-}
 cd "$CORE" || exit 1
 
 RISCV_TESTS_REV=7b68f7b91f827f8d94cc1c57ff123752c5c8f704
@@ -21,7 +28,7 @@ BUILD=$CORE/riscv/build
 # rv32ui-p-*: everything except tests the core can't run
 #   fence_i: needs a writable instruction memory (zifencei)
 #   ma_data: needs misaligned data access to be handled in hardware
-UI_SKIP="fence_i ma_data"
+UI_SKIP=${RV_UI_SKIP:-"fence_i ma_data"}
 # rv32mi-p-*: machine-mode tests. not run:
 #   illegal: exercises vectored mtvec and software interrupts (mip/mideleg), the core has no interrupts
 #   instret_overflow: needs minstret/minstreth
@@ -60,12 +67,12 @@ for t in "${tests[@]}"; do
   name=rv32${t#rv32}; name=${name/\//-p-}
   elf=$BUILD/$name.elf
   ${TOOLCHAIN}gcc -march=$RV_MARCH -mabi=ilp32 -static -mcmodel=medany -nostdlib -nostartfiles \
-    -I $SRC/env/p -I $SRC/isa/macros/scalar -Wl,--no-warn-rwx-segments -T $HERE/link.ld $SRC/isa/$t.S -o $elf || { echo "$name: BUILD FAILED"; fail=$((fail+1)); failed+=($name); continue; }
+    -I $SRC/env/p -I $SRC/isa/macros/scalar -Wl,--no-warn-rwx-segments -Wl,--defsym=RAM_BASE=$RV_BASE -T $HERE/link.ld $SRC/isa/$t.S -o $elf || { echo "$name: BUILD FAILED"; fail=$((fail+1)); failed+=($name); continue; }
   ${TOOLCHAIN}objcopy -O binary $elf $BUILD/$name.bin
   od -An -v -tx4 -w4 $BUILD/$name.bin | tr -d ' ' > $BUILD/$name.hex
   tohost=$(${TOOLCHAIN}nm $elf | awk '$3=="tohost"{print $1}')
   iverilog -g2012 -o $BUILD/$name.out -Ptest_riscv.IMAGE=\"$BUILD/$name.hex\" -Ptest_riscv.TOHOST=\'h$tohost \
-    -c $BUILD/core.f tests/test_riscv.sv 2>&1 | grep -v "^$" | head -5
+    $RV_IFLAGS -c $BUILD/core.f tests/test_riscv.sv 2>&1 | grep -v "^$" | head -5
   res=$(vvp -n $BUILD/$name.out | grep -E "^(PASS|FAIL)" | head -1)
   echo "$name: ${res:-NO RESULT}"
   case "$res" in PASS*) pass=$((pass+1)) ;; *) fail=$((fail+1)); failed+=($name) ;; esac
