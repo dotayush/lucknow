@@ -5,10 +5,16 @@
 //   +rx_delay=<clocks>              clocks before the first received byte (default 20000)
 //   +rx_gap=<bit times>             idle time between received bytes (default 2). the uart's fifo is 16
 //                                   bytes, a longer burst needs the kernel's interrupt handler time
+//   +interactive                    connect the terminal: keys go to the uart, the console goes to the screen, no
+//                                   cycle limit unless +max_cycles is given. Ctrl-] quits
 //   +max_cycles=<n>                 stop after n clocks (default 2e9)
 //   +stop_on=<text>[|<text>...]     stop once the console printed one of the texts
 //   +trace=<file>                   write the pc of every retired instruction (can be big)
 #include <cstdio>
+#include <deque>
+#include <termios.h>
+#include <unistd.h>
+#include <fcntl.h>
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
@@ -70,7 +76,7 @@ int main(int argc, char** argv) {
     fprintf(stderr, "[sim] %s: %u words at 0x%08x\n", spec.c_str(), n, base);
   }
 
-  std::vector<uint8_t> rx_bytes;
+  std::deque<uint8_t> rx_bytes;
   if (!rx_file.empty()) {
     FILE* f = fopen(rx_file.c_str(), "rb");
     if (f) { int c; while ((c = fgetc(f)) != EOF) rx_bytes.push_back((uint8_t)c); fclose(f); }
@@ -81,7 +87,28 @@ int main(int argc, char** argv) {
   int tx_state = 0, tx_count = 0, tx_bit = 0; uint8_t tx_byte = 0;
   std::string console;
   // uart receive driver
-  size_t rx_pos = 0; int rx_phase = -1, rx_clk = 0; uint8_t rx_cur = 0;
+  int rx_phase = -1, rx_clk = 0; uint8_t rx_cur = 0;
+
+  // interactive: raw terminal, non blocking reads, restored at exit
+  bool interactive = !plusarg(argc, argv, "interactive").empty() || [&] {
+    for (int i = 1; i < argc; i++) if (std::string(argv[i]) == "+interactive") return true;
+    return false;
+  }();
+  static struct termios saved_tio; static bool tio_saved = false;
+  if (interactive) {
+    if (tcgetattr(STDIN_FILENO, &saved_tio) == 0) {
+      tio_saved = true;
+      struct termios raw = saved_tio;
+      raw.c_lflag &= ~(ICANON | ECHO | ISIG | IEXTEN);
+      raw.c_iflag &= ~(IXON | ICRNL | INLCR);
+      tcsetattr(STDIN_FILENO, TCSANOW, &raw);
+      atexit([] { tcsetattr(STDIN_FILENO, TCSANOW, &saved_tio); });
+    }
+    fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK);
+    if (plusarg(argc, argv, "max_cycles").empty()) max_cycles = ~0ull;
+    if (plusarg(argc, argv, "rx_delay").empty()) rx_delay = 0;
+    fprintf(stderr, "[sim] interactive: Ctrl-] quits\r\n");
+  }
 
   uint64_t cycle = 0;
   uint64_t last_instret = 0;
@@ -118,10 +145,17 @@ int main(int argc, char** argv) {
       }
     }
 
-    // rx
+    // rx: keys from the terminal, polled now and then
+    if (interactive && (cycle & 0x3ff) == 0) {
+      uint8_t kb[64]; ssize_t n = read(STDIN_FILENO, kb, sizeof kb);
+      for (ssize_t i = 0; i < n; i++) {
+        if (kb[i] == 0x1d) { stop = true; break; }
+        rx_bytes.push_back(kb[i]);
+      }
+    }
     if (rx_phase < 0) {
       top->uart_rx = 1;
-      if (rx_pos < rx_bytes.size() && cycle >= rx_delay) { rx_cur = rx_bytes[rx_pos++]; rx_phase = 0; rx_clk = 0; }
+      if (!rx_bytes.empty() && cycle >= rx_delay) { rx_cur = rx_bytes.front(); rx_bytes.pop_front(); rx_phase = 0; rx_clk = 0; }
     } else {
       if (rx_phase == 0) top->uart_rx = 0;
       else if (rx_phase <= 8) top->uart_rx = (rx_cur >> (rx_phase - 1)) & 1;
