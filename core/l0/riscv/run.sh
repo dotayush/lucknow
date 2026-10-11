@@ -10,6 +10,7 @@
 #   RV_UA=1      also run rv32ua
 #   RV_BASE      address the image is linked at (ram base), default 0
 #   RV_UI_SKIP   rv32ui tests not to run
+#   RV_MI_EXTRA  rv32mi tests to run on top of the default list
 #   RV_IFLAGS    extra iverilog flags, for example -Ptest_riscv.DATA_WAIT=3
 set -u
 
@@ -32,10 +33,10 @@ BUILD=$CORE/riscv/build
 #   ma_data: needs misaligned data access to be handled in hardware
 UI_SKIP=${RV_UI_SKIP:-"fence_i ma_data"}
 # rv32mi-p-*: machine-mode tests. not run:
-#   illegal: exercises vectored mtvec and software interrupts (mip/mideleg), the core has no interrupts
-#   instret_overflow: needs minstret/minstreth
+#   illegal: exercises vectored mtvec and software interrupts (mip/mie), RV_MI_EXTRA for cores that have them
+#   instret_overflow: needs minstret/minstreth, RV_MI_EXTRA as well
 #   breakpoint: needs the debug trigger module (tselect/tdata)
-MI_TESTS="csr mcsr scall sbreak shamt ma_addr ma_fetch lh-misaligned lw-misaligned sh-misaligned sw-misaligned zicntr pmpaddr"
+MI_TESTS="csr mcsr scall sbreak shamt ma_addr ma_fetch lh-misaligned lw-misaligned sh-misaligned sw-misaligned zicntr pmpaddr ${RV_MI_EXTRA:-}"
 # rv32um-p-*: everything, when the core has the m extension
 UM_TESTS="mul mulh mulhsu mulhu div divu rem remu"
 # rv32ua-p-*: the word atomics, when the core has the a extension

@@ -31,7 +31,12 @@ module control #(
     output wire [DATA_WIDTH-1:0] mem_data_out, // data to put in mem
     input wire [DATA_WIDTH-1:0] mem_data_in, // data to take from mem
     input wire mem_ready,
-    input wire [1:0] mem_error
+    input wire [1:0] mem_error,
+
+    // interrupts and time, from the clint
+    input wire irq_software,
+    input wire irq_timer,
+    input wire [63:0] time_value
 );
 
   // central
@@ -78,9 +83,13 @@ module control #(
   wire [DATA_WIDTH-1:0] csr_rdata;
   reg [1:0] csr_op;
   reg trap;
+  reg trap_interrupt;
   reg [3:0] trap_cause;
   reg [DATA_WIDTH-1:0] trap_value;
   wire [DATA_WIDTH-1:0] trap_vector;
+  wire mtvec_vectored;
+  wire irq_pending;
+  wire [3:0] irq_code;
   reg mret;
   reg [DATA_WIDTH-1:0] inst_next_pc; // where the instruction itself sends the pc, before traps
   reg env_trap; // ecall or ebreak
@@ -105,12 +114,16 @@ module control #(
   wire sc_ok = is_sc && resv_valid && (resv_addr == rs1_data);
   wire amo_misaligned = (rs1_data[1:0] != 2'b00); // a misaligned sc must fault even when it would fail
 
-  wire req_read = is_amo ? (!illegal_amo && (is_lr || (is_rmw && !amo_phase))) : (dec_mem_read && !illegal_load);
-  wire req_write = is_amo ? (!illegal_amo && ((is_sc && (sc_ok || amo_misaligned)) || (is_rmw && amo_phase)))
-                          : (dec_mem_write && !illegal_store);
+  // an interrupt is taken between instructions: in front of this one, which then does nothing at all
+  // (no transfer, no write back, mepc is its own pc). that includes the second half of an amo, whose
+  // read has no effect, so the whole amo runs again after mret.
+  wire irq_take = irq_pending && imem_ready;
+  wire req_read = !irq_take && (is_amo ? (!illegal_amo && (is_lr || (is_rmw && !amo_phase))) : (dec_mem_read && !illegal_load));
+  wire req_write = !irq_take && (is_amo ? (!illegal_amo && ((is_sc && (sc_ok || amo_misaligned)) || (is_rmw && amo_phase)))
+                                        : (dec_mem_write && !illegal_store));
   wire data_req = (req_read || req_write) && imem_ready;
   // an amo read that came back fine is not the end of the instruction, the write is still to do
-  wire rmw_next = is_rmw && !illegal_amo && !amo_phase && imem_ready && mem_ready && (mem_error == NO_MEM_ERROR);
+  wire rmw_next = !irq_take && is_rmw && !illegal_amo && !amo_phase && imem_ready && mem_ready && (mem_error == NO_MEM_ERROR);
   // the whole core waits (pc, registers, csrs, memory are not updated) until the instruction and its data are there
   wire stall = !imem_ready || (data_req && !mem_ready) || rmw_next;
   wire csr_to_rd = (opcode == SYSTEM) && (f3 != SYS_ECALL_EBREAK); // csr instructions return the old csr value in rd
@@ -587,7 +600,7 @@ module control #(
                   inst_next_pc = csr_rdata; // MEPC
                 end
                 SYS_FUN_WFI: begin
-                  // no interrupts exist, so waiting for one is a no-op.
+                  // waiting for an interrupt is allowed to be a no-op, software loops around it.
                 end
                 default: illegal = 1;
               endcase
@@ -673,12 +686,18 @@ module control #(
   // on the address that block drives.
   always @* begin
     trap = 0;
+    trap_interrupt = 0;
     trap_cause = TRAP_NONE;
     trap_value = '0;
     next_pc = inst_next_pc;
 
-    // the first match wins, an instruction can only raise one.
-    if (imem_error != NO_MEM_ERROR) begin
+    // the first match wins, an instruction can only raise one. interrupts come before everything.
+    if (irq_take) begin
+      trap = 1;
+      trap_interrupt = 1;
+      trap_cause = irq_code;
+    end
+    else if (imem_error != NO_MEM_ERROR) begin
       trap = 1;
       trap_cause = (imem_error == OUT_OF_BOUNDS) ? TRAP_INST_ACCESS_FAULT : TRAP_INST_ADDR_MISALIGNED;
       trap_value = pc;
@@ -709,6 +728,7 @@ module control #(
 
     if (trap) begin
       next_pc = trap_vector;
+      if (trap_interrupt && mtvec_vectored) next_pc = trap_vector + {26'b0, trap_cause, 2'b00};
     end
 
     // nothing about this instruction is final until its fetch and data are in
@@ -795,11 +815,19 @@ module control #(
     .csr_rdata(csr_rdata),
     .csr_op(stall ? CSR_NOP : csr_op),
     .trap(trap),
+    .trap_interrupt(trap_interrupt),
     .trap_cause(trap_cause),
     .trap_value(trap_value),
     .trap_pc(pc),
     .mret(mret && !stall),
-    .trap_vector(trap_vector)
+    .trap_vector(trap_vector),
+    .mtvec_vectored(mtvec_vectored),
+    .irq_software(irq_software),
+    .irq_timer(irq_timer),
+    .irq_pending(irq_pending),
+    .irq_code(irq_code),
+    .time_value(time_value),
+    .retire(!stall && !trap)
   );
 
 endmodule

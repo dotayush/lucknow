@@ -26,12 +26,20 @@ module test_csrfile;
   reg [1:0] csr_op;
 
   reg trap;
+  reg trap_interrupt;
   reg [3:0] trap_cause;
   reg [31:0] trap_value;
   reg [31:0] trap_pc;
   reg mret;
   reg [31:0] mcycle_before;
   wire [31:0] trap_vector;
+  wire mtvec_vectored;
+  reg irq_software;
+  reg irq_timer;
+  wire irq_pending;
+  wire [3:0] irq_code;
+  reg [63:0] time_value;
+  reg retire;
 
   csrfile dut (
     .clk(clk),
@@ -41,12 +49,59 @@ module test_csrfile;
     .csr_rdata(csr_rdata),
     .csr_op(csr_op),
     .trap(trap),
+    .trap_interrupt(trap_interrupt),
     .trap_cause(trap_cause),
     .trap_value(trap_value),
     .trap_pc(trap_pc),
     .mret(mret),
-    .trap_vector(trap_vector)
+    .trap_vector(trap_vector),
+    .mtvec_vectored(mtvec_vectored),
+    .irq_software(irq_software),
+    .irq_timer(irq_timer),
+    .irq_pending(irq_pending),
+    .irq_code(irq_code),
+    .time_value(time_value),
+    .retire(retire)
   );
+
+  // write a csr through the instruction interface, then leave the port idle
+  task write_csr(input [11:0] addr, input [1:0] op, input [31:0] data);
+    begin
+      @(negedge clk);
+      csr_addr = addr;
+      csr_wdata = data;
+      csr_op = op;
+      @(negedge clk);
+      csr_op = CSR_NOP;
+    end
+  endtask
+
+  task expect_csr(input string what, input [11:0] addr, input [31:0] expected);
+    begin
+      csr_addr = addr;
+      csr_op = CSR_NOP;
+      #1;
+      if (csr_rdata !== expected) begin
+        test_failed = 1;
+        $display("[%0t] error: %s expected=0x%08x, got=0x%08x", $time, what, expected, csr_rdata);
+      end else begin
+        $display("[%0t] OK: %s = 0x%08x", $time, what, csr_rdata);
+      end
+    end
+  endtask
+
+  task expect_irq(input string what, input pending, input [3:0] code);
+    begin
+      #1;
+      if (irq_pending !== pending || (pending && irq_code !== code)) begin
+        test_failed = 1;
+        $display("[%0t] error: %s expected pending=%0d code=%0d, got pending=%0d code=%0d",
+                 $time, what, pending, code, irq_pending, irq_code);
+      end else begin
+        $display("[%0t] OK: %s (pending=%0d code=%0d)", $time, what, irq_pending, irq_code);
+      end
+    end
+  endtask
 
   // clock
   initial begin
@@ -55,6 +110,11 @@ module test_csrfile;
     csr_wdata = 0;
     csr_op = 0;
     trap = 0;
+    trap_interrupt = 0;
+    irq_software = 0;
+    irq_timer = 0;
+    time_value = 64'h0123_4567_89AB_CDEF;
+    retire = 0;
     trap_cause = 0;
     trap_value = 0;
     trap_pc = 0;
@@ -124,9 +184,9 @@ module test_csrfile;
     @(negedge clk); // wait for write to complete
     csr_op = CSR_NOP;
     #1;
-    if (csr_rdata !== 32'h00000013) begin
+    if (csr_rdata !== 32'h00000011) begin // bit 1 (the upper mode bit) is hardwired to 0
       test_failed = 1;
-      $display("[%0t] error: read CSR_MTVEC failed: expected=0x%08x, got=0x%08x", $time, 32'h00000013, csr_rdata);
+      $display("[%0t] error: read CSR_MTVEC failed: expected=0x%08x, got=0x%08x", $time, 32'h00000011, csr_rdata);
     end else begin
       $display("[%0t] OK: read CSR_MTVEC data=0x%08x", $time, csr_rdata);
     end
@@ -263,6 +323,105 @@ module test_csrfile;
     end else begin
       $display("[%0t] OK: read CSR_MCYCLE data=0x%08x", $time, csr_rdata);
     end
+
+    // only M-mode exists: MPP stays 11 and the unimplemented mstatus bits stay 0
+    write_csr(CSR_MSTATUS, CSR_WRITE, 32'hFFFF_FFFF);
+    expect_csr("mstatus keeps MIE, MPIE and MPP only", CSR_MSTATUS, 32'h0000_1888);
+    write_csr(CSR_MSTATUS, CSR_CLEAR, 32'h0000_1800);
+    expect_csr("MPP can't be cleared", CSR_MSTATUS, 32'h0000_1888);
+    write_csr(CSR_MSTATUS, CSR_WRITE, 32'h0);
+    expect_csr("mstatus all clear but MPP", CSR_MSTATUS, 32'h0000_1800);
+
+    // ---- interrupts ----
+    // mstatus.MIE = 0 from the last mret: nothing is taken, but mip still shows what is pending
+    write_csr(CSR_MIE, CSR_WRITE, 32'hFFFF_FFFF);
+    expect_csr("mie keeps only the implemented bits", CSR_MIE, 32'h0000_0888);
+    irq_timer = 1;
+    expect_csr("mip shows the timer", CSR_MIP, 32'h0000_0080);
+    expect_irq("MIE clear blocks the interrupt", 0, 0);
+    write_csr(CSR_MSTATUS, CSR_SET, 32'h8);
+    expect_irq("timer interrupt", 1, 4'd7);
+    irq_software = 1;
+    expect_csr("mip shows both", CSR_MIP, 32'h0000_0088);
+    expect_irq("software wins over timer", 1, 4'd3);
+    write_csr(CSR_MIE, CSR_CLEAR, 32'h8);
+    expect_irq("a disabled interrupt is not taken", 1, 4'd7);
+    write_csr(CSR_MIE, CSR_CLEAR, 32'h80);
+    expect_irq("nothing enabled", 0, 0);
+    write_csr(CSR_MIE, CSR_SET, 32'h88);
+    irq_software = 0;
+    irq_timer = 0;
+    expect_irq("nothing pending", 0, 0);
+    write_csr(CSR_MIP, CSR_SET, 32'h88); // mip cannot be written from software
+    expect_csr("mip ignores writes", CSR_MIP, 32'h0);
+
+    // an interrupt trap records the interrupt bit in mcause
+    @(negedge clk);
+    trap = 1;
+    trap_interrupt = 1;
+    trap_cause = 4'd7;
+    trap_pc = 32'h0000_0040;
+    @(negedge clk);
+    trap = 0;
+    trap_interrupt = 0;
+    expect_csr("mcause of a timer interrupt", CSR_MCAUSE, 32'h8000_0007);
+    expect_csr("mepc of an interrupt", CSR_MEPC, 32'h0000_0040);
+
+    // mtvec mode: only 0 (direct) and 1 (vectored)
+    write_csr(CSR_MTVEC, CSR_WRITE, 32'h0000_0103);
+    expect_csr("mtvec mode bit 1 is not writable", CSR_MTVEC, 32'h0000_0101);
+    #1;
+    if (mtvec_vectored !== 1'b1 || trap_vector !== 32'h0000_0100) begin
+      test_failed = 1;
+      $display("[%0t] error: vectored mtvec: vectored=%0d vector=0x%08x", $time, mtvec_vectored, trap_vector);
+    end
+    write_csr(CSR_MTVEC, CSR_WRITE, 32'h0000_0100);
+    #1;
+    if (mtvec_vectored !== 1'b0) begin
+      test_failed = 1;
+      $display("[%0t] error: direct mtvec reported as vectored", $time);
+    end
+
+    // ---- counters ----
+    expect_csr("time", CSR_TIME, 32'h89AB_CDEF);
+    expect_csr("timeh", CSR_TIMEH, 32'h0123_4567);
+
+    write_csr(CSR_MINSTRET, CSR_WRITE, 32'h0);
+    write_csr(CSR_MINSTRETH, CSR_WRITE, 32'h0);
+    repeat (2) @(negedge clk);
+    expect_csr("minstret does not count without retire", CSR_MINSTRET, 32'h0);
+    retire = 1;
+    repeat (3) @(negedge clk);
+    retire = 0;
+    expect_csr("minstret counts retired instructions", CSR_MINSTRET, 32'd3);
+    expect_csr("instret is a read only alias", CSR_INSTRET, 32'd3);
+    write_csr(CSR_INSTRET, CSR_WRITE, 32'd99);
+    expect_csr("instret ignores writes", CSR_INSTRET, 32'd3);
+
+    // the low half carries into the high half
+    write_csr(CSR_MINSTRET, CSR_WRITE, 32'hFFFF_FFFF);
+    retire = 1;
+    @(negedge clk);
+    retire = 0;
+    expect_csr("minstret wraps", CSR_MINSTRET, 32'h0);
+    expect_csr("minstreth carries", CSR_MINSTRETH, 32'h1);
+    write_csr(CSR_MCYCLE, CSR_WRITE, 32'hFFFF_FFFE);
+    repeat (3) @(negedge clk);
+    expect_csr("mcycleh carries", CSR_MCYCLEH, 32'h1);
+    expect_csr("cycleh is an alias", CSR_CYCLEH, 32'h1);
+
+    // writing a half drops that cycle's increment, so a pending carry can't leak into the other half
+    write_csr(CSR_MINSTRET, CSR_WRITE, 32'hFFFF_FFFF);
+    @(negedge clk);
+    csr_addr = CSR_MINSTRETH;
+    csr_wdata = 32'hFFFF_FFFF;
+    csr_op = CSR_WRITE;
+    retire = 1; // the csrw itself retires in the cycle it writes
+    @(negedge clk);
+    csr_op = CSR_NOP;
+    retire = 0;
+    expect_csr("minstret after a minstreth write", CSR_MINSTRET, 32'hFFFF_FFFF);
+    expect_csr("minstreth after its own write", CSR_MINSTRETH, 32'hFFFF_FFFF);
 
     // Finish the test
     repeat (5) @(posedge clk);

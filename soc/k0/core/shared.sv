@@ -202,6 +202,17 @@ package isa_shared;
     CSR_MSTATUS = 12'h300, // Machine status register
     CSR_ISA = 12'h301, // ISA and extensions
     CSR_MCYCLE = 12'hB00, // Machine cycle counter
+    CSR_MINSTRET = 12'hB02, // Machine instructions retired
+    CSR_MCYCLEH = 12'hB80, // upper 32 bits of mcycle
+    CSR_MINSTRETH = 12'hB82, // upper 32 bits of minstret
+
+    // user level read only counters (zicntr), aliases of the machine ones; time is the clint's mtime
+    CSR_CYCLE = 12'hC00,
+    CSR_TIME = 12'hC01,
+    CSR_INSTRET = 12'hC02,
+    CSR_CYCLEH = 12'hC80,
+    CSR_TIMEH = 12'hC81,
+    CSR_INSTRETH = 12'hC82,
 
     // metadata CSRs
     CSR_MVENDORID = 12'hF11, // Vendor ID

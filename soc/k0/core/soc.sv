@@ -28,6 +28,10 @@ module soc #(
   wire mem_ready;
   wire [1:0] mem_error;
 
+  wire [63:0] mtime;
+  wire msip;
+  wire mtip;
+
   control #(
     .DATA_WIDTH(DATA_WIDTH)
   ) core_inst (
@@ -45,7 +49,10 @@ module soc #(
     .mem_data_out(mem_data_out),
     .mem_data_in(mem_data_in),
     .mem_ready(mem_ready),
-    .mem_error(mem_error)
+    .mem_error(mem_error),
+    .irq_software(msip),
+    .irq_timer(mtip),
+    .time_value(mtime)
   );
 
   bus #(
@@ -72,7 +79,10 @@ module soc #(
     .mem_rdata(mem_data_in),
     .mem_ready(mem_ready),
     .mem_error(mem_error),
-    .uart_tx(uart_tx)
+    .uart_tx(uart_tx),
+    .mtime(mtime),
+    .msip(msip),
+    .mtip(mtip)
   );
 
 endmodule
