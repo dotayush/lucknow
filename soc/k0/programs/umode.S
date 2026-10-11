@@ -27,6 +27,10 @@ _start:
     sw    t0, 0(s1)              # no timer interrupt for now
     li    t0, 0x80
     csrs  mie, t0                # timer enabled, mstatus.MIE stays 0
+    li    t0, -1
+    csrw  pmpaddr0, t0           # one region, everything, rwx: user mode fails every access without one
+    li    t0, 0x1f
+    csrw  pmpcfg0, t0
     li    t0, 0x1800
     csrc  mstatus, t0            # MPP = user
     la    t0, user

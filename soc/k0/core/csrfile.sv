@@ -4,7 +4,7 @@
 `endif
 
 
-module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096) (
+module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096, PMP_ENTRIES = 8) (
     input wire clk,
     input wire rst_n,
 
@@ -24,6 +24,8 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096) (
     output wire [DATA_WIDTH-1:0] trap_vector, // address of the trap handler, 31 ~ 2 + 00 (word aligned)
     output wire priv_user, // the hart is in user mode (otherwise machine mode)
     output wire [DATA_WIDTH-1:0] mcounteren, // which counters user mode may read
+    output wire [PMP_ENTRIES*8-1:0] pmp_cfg, // pmpcfg bytes, entry 0 lowest
+    output wire [PMP_ENTRIES*32-1:0] pmp_addr,
     output wire mtvec_vectored, // mtvec mode 1: interrupts go to trap_vector + 4 * code
 
     // interrupts, from the outside world
@@ -49,6 +51,20 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096) (
   reg [63:0] cycle;
   reg user; // 1: user mode, 0: machine mode
   reg [63:0] instret;
+
+  // pmp: entries 0 to PMP_ENTRIES-1 (at most 16). the others read as zero and ignore writes. a locked entry
+  // ignores writes to its pmpcfg byte and its pmpaddr, and so does the pmpaddr below a locked TOR entry
+  reg [7:0] pmpcfg [0:15];
+  reg [31:0] pmpaddr [0:15];
+  genvar gi;
+  generate
+    for (gi = 0; gi < PMP_ENTRIES; gi = gi + 1) begin : g_pmp
+      assign pmp_cfg[gi*8 +: 8] = pmpcfg[gi];
+      assign pmp_addr[gi*32 +: 32] = pmpaddr[gi];
+    end
+  endgenerate
+  wire [3:0] pmp_idx = csr_addr[3:0];
+  wire pmp_addr_locked = pmpcfg[pmp_idx][7] || (pmp_idx != 4'd15 && pmpcfg[pmp_idx + 4'd1][7] && pmpcfg[pmp_idx + 4'd1][4:3] == 2'b01);
 
   function automatic logic is_writeable(input [11:0] addr);
     case (addr)
@@ -80,7 +96,9 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096) (
       CSR_MINSTRETH, CSR_INSTRETH: csr_rdata = instret[63:32];
       CSR_TIME: csr_rdata = time_value[31:0];
       CSR_TIMEH: csr_rdata = time_value[63:32];
-      default: csr_rdata = csr_array[csr_addr];
+      12'h3A0, 12'h3A1, 12'h3A2, 12'h3A3: csr_rdata = {pmpcfg[{csr_addr[1:0], 2'd3}], pmpcfg[{csr_addr[1:0], 2'd2}],
+                                                       pmpcfg[{csr_addr[1:0], 2'd1}], pmpcfg[{csr_addr[1:0], 2'd0}]};
+      default: csr_rdata = (csr_addr[11:4] == 8'h3B) ? pmpaddr[pmp_idx] : csr_array[csr_addr];
     endcase
   end
 
@@ -104,6 +122,10 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096) (
       cycle <= 64'd0;
       instret <= 64'd0;
       user <= 0;
+      for (int j = 0; j < 16; j = j + 1) begin
+        pmpcfg[j] <= 8'h00;
+        pmpaddr[j] <= 32'h0;
+      end
       for (int i = 0; i < COUNT; i = i + 1) begin
         case (i)
           CSR_MVENDORID: csr_array[i] <= 32'h00000000;
@@ -149,7 +171,21 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096) (
           CSR_MIE: csr_array[CSR_MIE] <= wr_val & MIE_MASK;
           CSR_MTVEC: csr_array[CSR_MTVEC] <= wr_val & ~32'h2; // mode is 0 (direct) or 1 (vectored)
           CSR_MSTATUS: csr_array[CSR_MSTATUS] <= (wr_val & MSTATUS_MASK) | ((wr_val[12:11] == 2'b11) ? MSTATUS_MPP_M : 0); // MPP is user (00) or machine (11)
-          default: csr_array[csr_addr] <= wr_val;
+          12'h3A0, 12'h3A1, 12'h3A2, 12'h3A3: begin
+            for (int k = 0; k < 4; k = k + 1) begin
+              if ({csr_addr[1:0], 2'd0} + k < PMP_ENTRIES && !pmpcfg[{csr_addr[1:0], 2'd0} + k][7]) begin
+                // W without R is reserved: drop W; bits 6:5 are zero
+                pmpcfg[{csr_addr[1:0], 2'd0} + k] <= {wr_val[8*k+7], 2'b00, wr_val[8*k+3 +: 2], wr_val[8*k+2],
+                                                       wr_val[8*k+1] && wr_val[8*k], wr_val[8*k]};
+              end
+            end
+          end
+          default: begin
+            if (csr_addr[11:4] == 8'h3B) begin
+              if (pmp_idx < PMP_ENTRIES && !pmp_addr_locked) pmpaddr[pmp_idx] <= wr_val;
+            end
+            else csr_array[csr_addr] <= wr_val;
+          end
         endcase
       end
     end

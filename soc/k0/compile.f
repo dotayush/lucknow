@@ -4,6 +4,7 @@
 ./core/decoder.sv
 ./core/cache.sv
 ./core/uart.sv
+./core/pmp.sv
 ./core/clint.sv
 ./core/plic.sv
 ./core/regfile.sv

@@ -5,7 +5,8 @@
 
 module control #(
   parameter DATA_WIDTH = 32,
-  parameter RESET_VECTOR = 32'h0000_1000 // boot rom
+  parameter RESET_VECTOR = 32'h0000_1000, // boot rom
+  parameter PMP_ENTRIES = 8
 ) (
     // global signals
     input wire clk,
@@ -119,12 +120,22 @@ module control #(
   // (no transfer, no write back, mepc is its own pc). that includes the second half of an amo, whose
   // read has no effect, so the whole amo runs again after mret.
   wire irq_take = irq_pending && imem_ready;
-  wire req_read = !irq_take && (is_amo ? (!illegal_amo && (is_lr || (is_rmw && !amo_phase))) : (dec_mem_read && !illegal_load));
-  wire req_write = !irq_take && (is_amo ? (!illegal_amo && ((is_sc && (sc_ok || amo_misaligned)) || (is_rmw && amo_phase)))
+  // pmp: the fetch address must be executable, and the data address readable and/or writable. a data
+  // access that fails is not issued at all (a device read can have side effects) and traps instead
+  wire [PMP_ENTRIES*8-1:0] pmp_cfg;
+  wire [PMP_ENTRIES*32-1:0] pmp_addr;
+  wire pmp_fetch_ok;
+  wire pmp_data_ok;
+  wire pmp_fetch_fault = !pmp_fetch_ok;
+  wire want_read = !irq_take && !pmp_fetch_fault && (is_amo ? (!illegal_amo && (is_lr || (is_rmw && !amo_phase))) : (dec_mem_read && !illegal_load));
+  wire want_write = !irq_take && !pmp_fetch_fault && (is_amo ? (!illegal_amo && ((is_sc && (sc_ok || amo_misaligned)) || (is_rmw && amo_phase)))
                                         : (dec_mem_write && !illegal_store));
+  wire pmp_data_fault = (want_read || want_write) && !pmp_data_ok;
+  wire req_read = want_read && !pmp_data_fault;
+  wire req_write = want_write && !pmp_data_fault;
   wire data_req = (req_read || req_write) && imem_ready;
   // an amo read that came back fine is not the end of the instruction, the write is still to do
-  wire rmw_next = !irq_take && is_rmw && !illegal_amo && !amo_phase && imem_ready && mem_ready && (mem_error == NO_MEM_ERROR);
+  wire rmw_next = !irq_take && is_rmw && !illegal_amo && !amo_phase && !pmp_fetch_fault && !pmp_data_fault && imem_ready && mem_ready && (mem_error == NO_MEM_ERROR);
   // the whole core waits (pc, registers, csrs, memory are not updated) until the instruction and its data are there
   wire stall = !imem_ready || (data_req && !mem_ready) || rmw_next;
   wire priv_user; // user mode: machine csrs, mret and wfi are illegal
@@ -708,9 +719,9 @@ module control #(
       trap_interrupt = 1;
       trap_cause = irq_code;
     end
-    else if (imem_error != NO_MEM_ERROR) begin
+    else if (imem_error != NO_MEM_ERROR || pmp_fetch_fault) begin
       trap = 1;
-      trap_cause = (imem_error == OUT_OF_BOUNDS) ? TRAP_INST_ACCESS_FAULT : TRAP_INST_ADDR_MISALIGNED;
+      trap_cause = (imem_error == OUT_OF_BOUNDS || pmp_fetch_fault) ? TRAP_INST_ACCESS_FAULT : TRAP_INST_ADDR_MISALIGNED;
       trap_value = pc;
     end
     else if (env_trap) begin
@@ -722,13 +733,13 @@ module control #(
       trap_cause = TRAP_ILLEGAL_INSTRUCTION;
       trap_value = instruction;
     end
-    else if (mem_error != NO_MEM_ERROR) begin
+    else if (mem_error != NO_MEM_ERROR || pmp_data_fault) begin
       trap = 1;
       trap_value = addr;
       if (is_amo ? is_lr : dec_mem_read) begin // sc and amos report as stores
-        trap_cause = (mem_error == OUT_OF_BOUNDS) ? TRAP_LOAD_ACCESS_FAULT : TRAP_LOAD_ADDR_MISALIGNED;
+        trap_cause = (mem_error == OUT_OF_BOUNDS || pmp_data_fault) ? TRAP_LOAD_ACCESS_FAULT : TRAP_LOAD_ADDR_MISALIGNED;
       end else begin
-        trap_cause = (mem_error == OUT_OF_BOUNDS) ? TRAP_STORE_ACCESS_FAULT : TRAP_STORE_ADDR_MISALIGNED;
+        trap_cause = (mem_error == OUT_OF_BOUNDS || pmp_data_fault) ? TRAP_STORE_ACCESS_FAULT : TRAP_STORE_ADDR_MISALIGNED;
       end
     end
     else if (inst_next_pc[1:0] != 2'b00) begin // jump, taken branch or mret to a target that isn't 4 byte aligned
@@ -815,9 +826,20 @@ module control #(
     .sign_extended_data(sign_extended_data2)
   );
 
+  pmp #(.N(PMP_ENTRIES)) pmp_fetch_inst (
+    .cfg(pmp_cfg), .addr(pmp_addr), .user(priv_user), .a(pc), .r(1'b0), .w(1'b0), .x(1'b1), .ok(pmp_fetch_ok)
+  );
+
+  // an amo needs both read and write permission, lr only read, everything else what it says
+  pmp #(.N(PMP_ENTRIES)) pmp_data_inst (
+    .cfg(pmp_cfg), .addr(pmp_addr), .user(priv_user), .a(addr),
+    .r(is_amo ? 1'b1 : dec_mem_read), .w(is_amo ? !is_lr : dec_mem_write), .x(1'b0), .ok(pmp_data_ok)
+  );
+
   csrfile #(
     .DATA_WIDTH(DATA_WIDTH),
-    .COUNT(4096)
+    .COUNT(4096),
+    .PMP_ENTRIES(PMP_ENTRIES)
   ) csrfile_inst (
     .clk(clk),
     .rst_n(rst_n),
@@ -833,6 +855,8 @@ module control #(
     .mret(mret && !stall),
     .trap_vector(trap_vector),
     .mtvec_vectored(mtvec_vectored),
+    .pmp_cfg(pmp_cfg),
+    .pmp_addr(pmp_addr),
     .priv_user(priv_user),
     .mcounteren(mcounteren),
     .irq_software(irq_software),
