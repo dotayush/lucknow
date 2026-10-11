@@ -25,21 +25,27 @@ digital designs i've created at the heart of the city of lucknow, india!
     be stored and run (`fence.i` works)
   - `valid/ready` style handshakes on both ports: the core stalls while a fetch or access is
     not ready, `bus.sv` can add wait states (`FETCH_WAIT`, `DATA_WAIT`) to model slow memory
-  - uart @ `0x1000_0000`: transmit only, 16550 register layout (what the ns16550a driver and earlycon use),
-    byte accesses, 8N1 at clk/`UART_CLKS_PER_BIT`; `UART_ECHO=1` prints the bytes in simulation
+  - uart @ `0x1000_0000`: 16550 register layout (what the 8250 driver and earlycon use), byte accesses, 8N1 at
+    clk/`UART_CLKS_PER_BIT` (>= 4); `UART_ECHO=1` prints the bytes in simulation. transmit and receive, one byte
+    each way (no fifo, so it is a 16450: use `ns16450` in a device tree), overrun and framing error in `LSR`,
+    received data / transmitter empty / line status interrupts (`IER`, `IIR`), divisor latches (`DLAB`) are stored
+    only. a program has to drain the receiver within one byte time
   - clint @ `0x0200_0000` (qemu virt / sifive layout, one hart): `msip` @ `+0x0`, `mtimecmp` @ `+0x4000`,
     `mtime` @ `+0xBFF8`, word accesses; `mtime` counts clocks
-  - machine interrupts: timer (mip.MTIP) and software (mip.MSIP) from the clint, `mie`, `mstatus.MIE/MPIE`, taken
+  - plic @ `0x0C00_0000` (sifive / qemu virt layout): 31 level sources (uart is source 10, like qemu virt), 3 bit
+    priorities, one context (machine mode of the hart), claim / complete, threshold; word accesses
+  - machine interrupts: timer (mip.MTIP) and software (mip.MSIP) from the clint, external (mip.MEIP) from the plic,
+    `mie`, `mstatus.MIE/MPIE`, taken
     between instructions (an interrupted instruction does nothing and is replayed after `mret`, `mepc` is its pc),
     `mtvec` direct and vectored mode; `wfi` is a no-op
   - counters: `mcycle`/`minstret` (64 bit, `mcycleh`/`minstreth`), `cycle`/`instret` aliases, `time`/`timeh` read
     from the clint's `mtime`
   - `mstatus` only has MIE, MPIE and MPP (always machine mode), `mip` is read only
   - `soc.sv` wires the core to the bus; unmapped accesses, stores to the rom, non-byte uart accesses and
-    non-word clint accesses are access faults
+    non-word clint or plic accesses are access faults
   - passes riscv-tests rv32ui (including `fence_i`), rv32mi (including `illegal` and `instret_overflow`),
     rv32um and rv32ua, also with wait states
-  - not done yet: uart receive, plic / external interrupts, more peripherals, s-mode and an mmu
+  - not done yet: more peripherals, s-mode (and a second plic context) and an mmu
 
 ### riscv-tests.
 the cores are checked against the official [riscv-tests](https://github.com/riscv-software-src/riscv-tests) isa suites.
@@ -67,9 +73,14 @@ bare-metal programs on k0 (builds `programs/<name>.S`, runs it, checks what the 
 ./soc/k0/programs/run.sh hello       # uart output
 ./soc/k0/programs/run.sh timer       # clint timer and software interrupts, direct and vectored mtvec
 ./soc/k0/programs/run.sh irqatomic   # amos interrupted at random points are neither lost nor repeated
+./soc/k0/programs/run.sh uartrx      # bytes typed on the uart (uartrx.input) arrive by plic interrupt, echoed upper case
 
 # with slow memories
 IFLAGS="-Ptest_hello.FETCH_WAIT=2 -Ptest_hello.DATA_WAIT=3" ./soc/k0/programs/run.sh irqatomic
+
+# input bytes back to back (the default leaves 2 bit times between them); with slow memories and no gap the handler
+# can't keep up with a uart that has no fifo, bytes are lost (overrun), which is what the hardware should do
+IFLAGS="-Ptest_hello.RX_GAP=0" ./soc/k0/programs/run.sh uartrx
 ```
 
 ### icarus processing.
