@@ -16,7 +16,13 @@ module cache #(
   input  wire [DATA_WIDTH-1:0]    addr,
   input  wire [DATA_WIDTH-1:0]    data_in,
   output reg  [DATA_WIDTH-1:0]    data_out,
-  output reg  [1:0]               mem_error
+  output reg  [1:0]               mem_error,
+
+  // second, read only, word port for instruction fetch. it reads the same array as the
+  // port above so a store is visible to the next fetch.
+  input  wire [DATA_WIDTH-1:0]    fetch_addr,
+  output reg  [DATA_WIDTH-1:0]    fetch_data,
+  output reg  [1:0]               fetch_error
 );
 
   localparam int INDEX_WIDTH = $clog2(CACHE_SIZE);
@@ -32,11 +38,9 @@ module cache #(
   task automatic restore;
     integer i;
     begin
+      for (i = 0; i < CACHE_SIZE; i = i + 1) mem[i] = '0; // an image can be shorter than the memory
       if (MEM_INIT != "") begin
         $readmemh(MEM_INIT, mem);
-      end
-      else begin
-        for (i = 0; i < CACHE_SIZE; i = i + 1) mem[i] = '0;
       end
     end
   endtask
@@ -69,6 +73,20 @@ module cache #(
         HALF_MEM_ACCESS: data_out = {{(DATA_WIDTH-16){1'b0}}, mem[word_index][lane_shift +: 16]};
         default: data_out = mem[word_index];
       endcase
+    end
+  end
+
+  always @* begin
+    fetch_data = '0;
+    fetch_error = NO_MEM_ERROR;
+    if (fetch_addr[DATA_WIDTH-1:2] >= CACHE_SIZE) begin
+      fetch_error = OUT_OF_BOUNDS;
+    end
+    else if (fetch_addr[1:0] != 2'b00) begin
+      fetch_error = ADDRESS_MISALIGNED;
+    end
+    else begin
+      fetch_data = mem[fetch_addr[INDEX_WIDTH+1:2]];
     end
   end
 

@@ -29,6 +29,9 @@ module test_memory;
   reg [1:0] mem_access_type;
   wire [DATA_WIDTH-1:0] data_out;
   wire [1:0] mem_error;
+  reg [DATA_WIDTH-1:0] fetch_addr;
+  wire [DATA_WIDTH-1:0] fetch_data;
+  wire [1:0] fetch_error;
 
   // dut instantiation
   cache #(
@@ -43,7 +46,10 @@ module test_memory;
     .mem_read(mem_read),
     .mem_access_type(mem_access_type),
     .data_out(data_out),
-    .mem_error(mem_error)
+    .mem_error(mem_error),
+    .fetch_addr(fetch_addr),
+    .fetch_data(fetch_data),
+    .fetch_error(fetch_error)
   );
 
   // clock
@@ -108,8 +114,22 @@ module test_memory;
     end
   endtask
 
+
+  // fetch port: expected word and error for an address
+  task expect_fetch(input [DATA_WIDTH-1:0] fad, input [DATA_WIDTH-1:0] exp_data, input [1:0] exp_err);
+    begin
+      fetch_addr = fad;
+      #1;
+      if (fetch_data !== exp_data || fetch_error !== exp_err) begin
+        test_failed = 1;
+        $display("[%0t] error: fetch addr=0x%08x expected data=0x%08x err=%b, got data=0x%08x err=%b", $time, fad, exp_data, exp_err, fetch_data, fetch_error);
+      end
+    end
+  endtask
+
   initial begin
     test_failed = 0;
+    fetch_addr = '0;
     $dumpfile("./tests/results/test_memory.vcd");
     $dumpvars(0, test_memory);
 
@@ -174,6 +194,20 @@ module test_memory;
     expect_error(32'h80000000, BYTE_MEM_ACCESS, 0, OUT_OF_BOUNDS);
     read_word(32'h00000000, 32'h55667788, WORD_MEM_ACCESS);
     read_word((WORDS-1)*4, 32'h11223344, WORD_MEM_ACCESS);
+
+    // the fetch port sees the same words as the data port, including stores
+    expect_fetch(32'h00000000, 32'h55667788, NO_MEM_ERROR);
+    expect_fetch((WORDS-1)*4, 32'h11223344, NO_MEM_ERROR);
+    write_word(32'h00000008, 32'hCAFEF00D, WORD_MEM_ACCESS);
+    expect_fetch(32'h00000008, 32'hCAFEF00D, NO_MEM_ERROR); // visible right after the store
+    write_word(32'h00000009, 32'h000000EE, BYTE_MEM_ACCESS);
+    expect_fetch(32'h00000008, 32'hCAFEEE0D, NO_MEM_ERROR); // sub-word stores too
+
+    // fetch faults return no data
+    expect_fetch(32'h00000002, 32'h0, ADDRESS_MISALIGNED);
+    expect_fetch(32'h00000001, 32'h0, ADDRESS_MISALIGNED);
+    expect_fetch(WORDS*4, 32'h0, OUT_OF_BOUNDS);
+    expect_fetch(32'hFFFFFFFC, 32'h0, OUT_OF_BOUNDS);
 
     // no error is flagged when idle
     @(negedge clk);
