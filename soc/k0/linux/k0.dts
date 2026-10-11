@@ -34,7 +34,7 @@
 
 	memory@80000000 {
 		device_type = "memory";
-		reg = <0x80000000 0x800000>; // 8 MiB, RAM_WORDS = 2097152
+		reg = <0x80000000 0x1000000>; // 16 MiB, RAM_WORDS = 4194304
 	};
 
 	soc {
