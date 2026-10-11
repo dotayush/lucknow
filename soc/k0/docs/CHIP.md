@@ -129,18 +129,19 @@ Writes to read-only CSRs are dropped without trapping.
 ## Devices
 
 ### UART (`0x1000_0000`)
-16450-class: 16550 register layout without FIFOs, so one byte each way. Use
-`compatible = "ns16450"` in a device tree. Byte accesses only. Fixed 8N1 at
+16550A: 16550 register layout with a 16 byte receive and transmit FIFO, enabled by `FCR` bit 0
+(`FCR` is the write side of register 2; FIFO = first-in first-out queue). With the FIFOs off it behaves as a 16450,
+one byte each way. Use `compatible = "ns16550a"` in a device tree. Byte accesses only. Fixed 8N1 at
 `clk / UART_CLKS_PER_BIT` (default 8, minimum 4); the divisor latches (`DLAB`) are stored but
 do not change the baud rate.
 
 | offset | read | write |
 |---|---|---|
-| 0 | `RBR` received byte (clears DR) | `THR` send a byte; dropped if still sending |
+| 0 | `RBR` received byte (clears DR) | `THR` send a byte; with FIFOs off dropped if still sending, with FIFOs on queued (16 deep) |
 | 1 | `IER` | `IER`: bit 0 rx data, 1 THR empty, 2 line status |
-| 2 | `IIR`: 0x01 none, 0x06 line status, 0x04 rx data, 0x02 THR empty (reading clears 0x02) | `FCR` ignored |
+| 2 | `IIR`: 0x01 none, 0x06 line status, 0x04 rx data (at the trigger level), 0x0C character timeout, 0x02 THR empty (reading clears 0x02); bits 7:6 = 11 with FIFOs on | `FCR`: bit 0 FIFO enable, 1 clear rx, 2 clear tx, 7:6 rx trigger 1/4/8/14 |
 | 3, 4, 7 | `LCR`, `MCR`, `SCR` stored only | |
-| 5 | `LSR`: bit 0 DR, 1 overrun, 3 framing, 5 THRE, 6 TEMT (OE, FE clear on read) | |
+| 5 | `LSR`: bit 0 DR (rx FIFO not empty), 1 overrun, 3 framing, 5 THRE (tx FIFO empty), 6 TEMT (nothing queued or shifting) (OE, FE clear on read) | |
 | 6 | `MSR` = 0 | |
 
 An overrun keeps the unread byte and drops the new one. Software has to drain the receiver
@@ -213,7 +214,7 @@ lowest id on a tie. Only the UART is connected (source 10).
 - MMU, `satp`, page tables, `sfence.vma`; PMP (`pmpaddr*` is plain storage, no checks).
 - C (compressed) and F/D; hardware misaligned loads/stores (they trap).
 - Debug module and triggers, `mcountinhibit`, `mconfigptr`.
-- More than one hart, more than one PLIC context, FIFOs in the UART.
+- More than one hart, more than one PLIC context, per byte error flags in the UART FIFO.
 - Any storage device, timer other than CLINT, interrupt sources other than the UART.
 - Ram is small by default (32 KiB). Raise `RAM_WORDS` for anything larger.
 
@@ -228,5 +229,5 @@ to a shell on the uart. Everything for this is in `linux/` and `sim/`, the steps
 - `linux/build.sh` builds the kernel, the device tree (`k0.dts`) and a small freestanding `init` with a
   shell (`init/init.c`, a bFLT binary, no libc). `linux/run.sh` boots it, `linux/test.sh` boots it and types commands.
 - The kernel needs: `a0` = hart id and `a1` = device tree pointer (the boot rom does that), ram at
-  `0x8000_0000`, the kernel linked there, the uart as `ns16450`, CLINT, PLIC, `timebase-frequency`
+  `0x8000_0000`, the kernel linked there, the uart as `ns16550a`, CLINT, PLIC, `timebase-frequency`
   equal to the clock (`mtime` counts clocks). Misaligned loads/stores trap and are emulated by the kernel.

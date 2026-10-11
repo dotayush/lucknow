@@ -26,10 +26,11 @@ digital designs i've created at the heart of the city of lucknow, india!
   - `valid/ready` style handshakes on both ports: the core stalls while a fetch or access is
     not ready, `bus.sv` can add wait states (`FETCH_WAIT`, `DATA_WAIT`) to model slow memory
   - uart @ `0x1000_0000`: 16550 register layout (what the 8250 driver and earlycon use), byte accesses, 8N1 at
-    clk/`UART_CLKS_PER_BIT` (>= 4); `UART_ECHO=1` prints the bytes in simulation. transmit and receive, one byte
-    each way (no fifo, so it is a 16450: use `ns16450` in a device tree), overrun and framing error in `LSR`,
+    clk/`UART_CLKS_PER_BIT` (>= 4); `UART_ECHO=1` prints the bytes in simulation. transmit and receive, 16 byte
+    fifos in each direction when `FCR` bit 0 is set (a 16550A: use `ns16550a` in a device tree, trigger levels and a
+    character timeout interrupt), otherwise one byte each way (a 16450), overrun and framing error in `LSR`,
     received data / transmitter empty / line status interrupts (`IER`, `IIR`), divisor latches (`DLAB`) are stored
-    only. a program has to drain the receiver within one byte time
+    only. with the fifos off a program has to drain the receiver within one byte time
   - clint @ `0x0200_0000` (qemu virt / sifive layout, one hart): `msip` @ `+0x0`, `mtimecmp` @ `+0x4000`,
     `mtime` @ `+0xBFF8`, word accesses; `mtime` counts clocks
   - plic @ `0x0C00_0000` (sifive / qemu virt layout): 31 level sources (uart is source 10, like qemu virt), 3 bit
@@ -83,7 +84,8 @@ bare-metal programs on k0 (builds `programs/<name>.S`, runs it, checks what the 
 IFLAGS="-Ptest_hello.FETCH_WAIT=2 -Ptest_hello.DATA_WAIT=3" ./soc/k0/programs/run.sh irqatomic
 
 # input bytes back to back (the default leaves 2 bit times between them); with slow memories and no gap the handler
-# can't keep up with a uart that has no fifo, bytes are lost (overrun), which is what the hardware should do
+# can't keep up with a uart in 16450 mode (that program does not enable the fifo), bytes are lost (overrun),
+# which is what the hardware should do
 IFLAGS="-Ptest_hello.RX_GAP=0" ./soc/k0/programs/run.sh uartrx
 ```
 

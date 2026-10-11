@@ -34,7 +34,7 @@ Findings that changed the plan:
 
 Still open (not needed for the shell, listed in order of usefulness):
 1. busybox and a libc for NOMMU RV32 (uClibc-ng + elf2flt through Buildroot), more than one process, `vfork`.
-2. A FIFO in the uart (a real 16550A), so typing does not depend on the sender's pace.
+2. ~~A FIFO in the uart~~ done: 16 byte FIFOs, `ns16550a`, trigger levels, character timeout. Linux types a whole line with 2 bit times between bytes.
 3. A reference run on QEMU (`qemu-system-riscv32 -M virt` with the same kernel) to diff traces against.
 4. PMP, so user tasks cannot overwrite the kernel.
 5. Block device or a larger initramfs, FPGA bring-up (clock, memory controller, `timebase-frequency`).
