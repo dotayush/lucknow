@@ -122,6 +122,8 @@ external ports. Reset puts pc at 0, clears registers and CSRs and reloads both m
 - Not run, because the feature is absent: `breakpoint` (debug triggers), `illegal`
   (interrupts, vectored `mtvec`), `instret_overflow` (`minstret`).
 
+The sixteen defects found while bringing the core up, with causes and fixes, are in `BUGS.md`.
+
 ## Limits worth knowing
 
 - One clock per instruction means a long combinational path (fetch to write back). Fine in
