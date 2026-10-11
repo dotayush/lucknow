@@ -3,17 +3,20 @@
 # in $LINUX (a linux 6.12 tree, see docs/PLAN.md): this script configures and builds it too.
 #   ./linux/build.sh                        downloads linux 6.12.112 into $WORK (default ~/personal/k0-linux)
 #   LINUX=<tree> ./linux/build.sh           uses a tree you already have (6.12.x)
-# the kernel build needs bc, flex, bison and make. BC_PATH=<dir with bc> adds a directory to PATH for it.
+# the kernel build needs bc, flex, bison and make (linux/env.sh checks, and finds tools built without root
+# in $WORK/tools/bin; BC_PATH=<dir> adds a directory to PATH).
 # outputs in $OUT (default linux/out): Image, k0.dtb, init.flat
 set -eu
 
 # set up paths and versions
 HERE=$(cd "$(dirname "$0")" && pwd)
+. $HERE/env.sh
 KVER=6.12.112
 WORK=${WORK:-$HOME/personal/k0-linux}
 LINUX=${LINUX:-$WORK/src/linux-$KVER}
 OUT=${OUT:-$HERE/out}
 TC=${TOOLCHAIN:-/opt/riscv32/bin/riscv32-unknown-elf-}
+need bc flex bison make python3 curl ${TC}gcc
 
 # fetch linux if not already there
 if [ ! -d $LINUX ]; then
@@ -37,7 +40,6 @@ sed "s|@INIT@|$OUT/init.flat|" $HERE/initramfs.list > $OUT/initramfs.list
 
 # build the kernel: configure, set the initramfs source, build the device tree and the kernel image
 export CROSS_COMPILE=$TC ARCH=riscv
-[ -n "${BC_PATH:-}" ] && export PATH=$BC_PATH:$PATH
 cp $HERE/k0_defconfig $LINUX/arch/riscv/configs/k0_defconfig
 make -C $LINUX k0_defconfig >/dev/null
 $LINUX/scripts/config --file $LINUX/.config --set-str INITRAMFS_SOURCE $OUT/initramfs.list

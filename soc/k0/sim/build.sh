@@ -7,6 +7,8 @@
 # then: ./sim/obj/Vsoc +image=<file> [+rx=<file>] [+stop_on=<text>] ...  (see sim_main.cpp)
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
+. $HERE/../linux/env.sh
+need verilator make g++
 K0=$HERE/..
 cd $K0
 verilator --cc --exe --build -j 0 -O3 --public-flat-rw -Wno-fatal -Wno-lint -Wno-style \

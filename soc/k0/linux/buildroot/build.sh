@@ -5,17 +5,18 @@
 # tools buildroot lists (gcc, make, patch, perl, python3, cpio, rsync, wget, unzip, bc, file).
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
+. $HERE/../env.sh
 BRVER=2025.02.7
 WORK=${WORK:-$HOME/personal/k0-linux}
 BR=${BR:-$WORK/src/buildroot-$BRVER}
 OUT=${OUT:-$HERE/../out}
 BRO=$WORK/br-out
+need rsync cpio wget bc make python3 curl unzip file patch perl gcc g++
 if [ ! -d $BR ]; then
   mkdir -p $WORK/dl $WORK/src
   curl -fL -o $WORK/dl/buildroot-$BRVER.tar.xz https://buildroot.org/downloads/buildroot-$BRVER.tar.xz
   tar -C $WORK/src -xf $WORK/dl/buildroot-$BRVER.tar.xz
 fi
-[ -n "${BC_PATH:-}" ] && export PATH=$BC_PATH:$PATH
 # buildroot refuses empty entries (meaning ".") in PATH and LD_LIBRARY_PATH
 clean() { printf '%s' "$1" | tr ':' '\n' | grep -v '^$' | paste -sd: -; }
 export PATH=$(clean "$PATH")

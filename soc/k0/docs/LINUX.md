@@ -51,7 +51,9 @@ Generated files live in `linux/out/` (ignored by git). Downloads and build trees
 
 Host needs: a `riscv32-unknown-elf` gcc (the bare-metal one is enough for the kernel; set `TOOLCHAIN=`),
 verilator, `bc`, `flex`, `bison`, `make`, `python3`, `curl`. Buildroot also wants `rsync`, `cpio`, `wget`.
-Without root, build `bc` and `rsync` from source into a directory and pass it as `BC_PATH=`.
+Without root, build what is missing (`bc`, `rsync`) from source into `~/personal/k0-linux/tools/bin`: `linux/env.sh`
+puts that directory on `PATH` after the system ones and each script checks its tools before it starts, so a
+missing one is reported up front. `BC_PATH=<dir>` puts another directory first.
 
 ```
 ./sim/build.sh                       # sim/obj/Vsoc, 16 MiB ram, uart 256 clocks per bit
