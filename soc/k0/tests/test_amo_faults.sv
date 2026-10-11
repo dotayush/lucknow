@@ -141,8 +141,8 @@ module test_amo_faults;
     end
 
     // the rom is untouched, the read half of the faulting amoadd must not have written back
-    expect_word("fast", fast.bus_inst.rom_inst.mem[0], 32'h800002b7, "rom word 0");
-    expect_word("slow", slow.bus_inst.rom_inst.mem[0], 32'h800002b7, "rom word 0");
+    expect_word("fast", fast.bus_inst.rom_inst.mem[0], 32'h807f05b7, "rom word 0");
+    expect_word("slow", slow.bus_inst.rom_inst.mem[0], 32'h807f05b7, "rom word 0");
 
     finish;
   end

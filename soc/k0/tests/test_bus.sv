@@ -176,19 +176,20 @@ module test_bus;
     @(negedge clk);
 
     // boot rom: the image, then zeros up to its size
-    load(ROM_BASE, WORD_MEM_ACCESS, 32'h800002b7, NO_MEM_ERROR, "rom word 0");
-    load(ROM_BASE + 4, WORD_MEM_ACCESS, 32'h00028067, NO_MEM_ERROR, "rom word 1");
-    load(ROM_BASE + 8, WORD_MEM_ACCESS, 32'h0, NO_MEM_ERROR, "rom word 2");
+    load(ROM_BASE, WORD_MEM_ACCESS, 32'h807f05b7, NO_MEM_ERROR, "rom word 0");
+    load(ROM_BASE + 4, WORD_MEM_ACCESS, 32'h00000513, NO_MEM_ERROR, "rom word 1");
+    load(ROM_BASE + 12, WORD_MEM_ACCESS, 32'h00028067, NO_MEM_ERROR, "rom word 3");
+    load(ROM_BASE + 16, WORD_MEM_ACCESS, 32'h0, NO_MEM_ERROR, "rom word 4");
     load(ROM_BASE + 4*(ROM_WORDS-1), WORD_MEM_ACCESS, 32'h0, NO_MEM_ERROR, "rom last word");
-    load(ROM_BASE + 1, BYTE_MEM_ACCESS, 32'h00000002, NO_MEM_ERROR, "rom byte lane"); // 0x800002b7 -> byte 1 = 0x02
-    fetch(ROM_BASE, 32'h800002b7, NO_MEM_ERROR, "rom");
-    fetch(ROM_BASE + 4, 32'h00028067, NO_MEM_ERROR, "rom");
+    load(ROM_BASE + 1, BYTE_MEM_ACCESS, 32'h00000005, NO_MEM_ERROR, "rom byte lane"); // 0x807f05b7 -> byte 1 = 0x05
+    fetch(ROM_BASE, 32'h807f05b7, NO_MEM_ERROR, "rom");
+    fetch(ROM_BASE + 12, 32'h00028067, NO_MEM_ERROR, "rom");
 
     // the rom can't be written: access fault, contents unchanged
     store(ROM_BASE, WORD_MEM_ACCESS, 32'hDEADBEEF, OUT_OF_BOUNDS, "rom");
-    store(ROM_BASE + 8, BYTE_MEM_ACCESS, 32'h000000AA, OUT_OF_BOUNDS, "rom");
-    load(ROM_BASE, WORD_MEM_ACCESS, 32'h800002b7, NO_MEM_ERROR, "rom after store attempt");
-    load(ROM_BASE + 8, WORD_MEM_ACCESS, 32'h0, NO_MEM_ERROR, "rom after store attempt");
+    store(ROM_BASE + 16, BYTE_MEM_ACCESS, 32'h000000AA, OUT_OF_BOUNDS, "rom");
+    load(ROM_BASE, WORD_MEM_ACCESS, 32'h807f05b7, NO_MEM_ERROR, "rom after store attempt");
+    load(ROM_BASE + 16, WORD_MEM_ACCESS, 32'h0, NO_MEM_ERROR, "rom after store attempt");
 
     // ram: stores and loads, all widths
     load(RAM_BASE, WORD_MEM_ACCESS, 32'h0, NO_MEM_ERROR, "ram initial");
@@ -317,7 +318,7 @@ module test_bus;
     @(posedge clk); #1;
     @(posedge clk); #1;
     expect_bit(s_imem_ready, 1'b1, "rom fetch ready after 2 cycles");
-    expect_bit(s_imem_data === 32'h800002b7, 1'b1, "rom fetch data after the wait");
+    expect_bit(s_imem_data === 32'h807f05b7, 1'b1, "rom fetch data after the wait");
 
     // data: a store lands once, on the edge that completes the transfer
     @(posedge clk); #1;
