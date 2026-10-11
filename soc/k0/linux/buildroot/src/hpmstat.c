@@ -5,6 +5,7 @@
 // other processes included. user mode can read them because mcounteren allows it (CHIP.md).
 // counters 3..10 count the events selected at reset: load, store, branch taken, branch not taken, jump,
 // exception, interrupt, instruction fetch wait clock.
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,7 +38,15 @@ static void read_all(unsigned long long v[N]) {
   v[9] = RD64(0xC0A, 0xC8A);
 }
 
+static void no_counters(int sig) {
+  static const char msg[] = "hpmstat: this machine does not let user mode read the counters (it is not k0?)\n";
+  (void)sig;
+  write(2, msg, sizeof msg - 1);
+  _exit(2);
+}
+
 int main(int argc, char **argv) {
+  signal(SIGILL, no_counters); // QEMU and most cores reset mcounteren to 0
   unsigned long long a[N], b[N];
   int status = 0;
   read_all(a);
