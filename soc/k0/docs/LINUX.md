@@ -10,8 +10,9 @@ uart. You can type at it from your terminal. Pipes, `$(( ))`, `/proc` and severa
 The same kernel image boots unchanged on QEMU's `virt` machine and prints the same command output, so
 QEMU is the reference.
 
-Not done: a real FPGA or chip (no clock, memory controller or board files), PMP (user tasks can write
-kernel memory), any block device (the root filesystem is an archive inside the kernel image).
+Not done: a real FPGA or chip (no clock, memory controller or board files), any block device (the root
+filesystem is an archive inside the kernel image). PMP exists in hardware but Linux does not use it to
+separate user tasks from the kernel (see Known gaps).
 
 ## Words
 
@@ -82,6 +83,22 @@ Without root, `apt-get download qemu-system-riscv qemu-system-common qemu-system
 output is identical to the model's; the boot log differs (timestamps, `base_baud`, the PLIC size) because
 the hardware description does.
 
+## Trace diff against QEMU
+
+`linux/tracediff.sh` runs the first N instructions on the model and on QEMU (same kernel, same device
+tree) and compares the program counter of every instruction. `N=4000000 ./linux/tracediff.sh`.
+
+- QEMU logs one line per instruction (`-accel tcg,one-insn-per-tb=on -d exec`). It leaves out the
+  instruction after a store to a device, so one missing instruction is not counted as a difference.
+- Wait loops run a different number of times because the model's uart is 256 clocks per bit and QEMU's is
+  instant, so every iteration of a short loop is dropped on both sides before comparing.
+- Result: the same instructions, in the same order, for the first 205,000 non-loop instructions (a million
+  and more with the loops), through the early kernel and `printk`. The first difference is inside
+  `printk`'s console handover (`console_lock_spinning_enable` against `..._disable_and_check`): which one
+  runs depends on whether a timer interrupt arrived during a console write, and that depends on time.
+  Interrupts are not at the same instruction count on the two, so the traces cannot be expected to
+  agree past that point.
+
 ## How long it takes
 
 | step | clocks | Verilator time |
@@ -109,7 +126,8 @@ character takes about 2560 clocks on the line.
 
 ## Known gaps
 
-- No PMP: a user task can overwrite kernel memory. Fine for a demo, not for isolation.
+- PMP is in the hardware (`CHIP.md`) but Linux's M-mode build only opens everything with it. User tasks can
+  still overwrite kernel memory until the kernel sets per-task regions.
 - No S-mode, no supervisor interrupts. The kernel runs in M-mode, which Linux supports only without an MMU.
 - Misaligned accesses trap, emulation is in software.
 - No block device, no network, no second hart.

@@ -208,10 +208,30 @@ lowest id on a tie. Only the UART is connected (source 10).
   interrupts are neither lost nor repeated), `uartrx` (typed bytes arrive by PLIC interrupt).
 - Not run: `breakpoint` (debug triggers) and `ma_data` (hardware misaligned access).
 
+## PMP (physical memory protection)
+
+Eight regions, checked on every instruction fetch and data access (`core/pmp.sv`, registers in
+`csrfile.sv`: `pmpcfg0`/`pmpcfg1`, `pmpaddr0`..`pmpaddr7`; entries 8 to 15 read as zero).
+
+| `pmpcfg` bit | meaning |
+|---|---|
+| 0 R, 1 W, 2 X | read, write, execute allowed |
+| 4:3 A | 0 off, 1 TOR (top of range: from the previous entry's address up to this one), 2 NA4 (one 4 byte word), 3 NAPOT (naturally aligned power of two, size from the trailing ones of `pmpaddr`) |
+| 7 L | locked: the entry also binds machine mode, and its `pmpcfg` byte and `pmpaddr` (and the `pmpaddr` below a locked TOR) ignore writes until reset |
+
+- The lowest numbered matching entry decides. User mode needs a match with the right permission, and fails
+  if nothing matches. Machine mode passes if nothing matches or the match is not locked.
+- A failing fetch is instruction access fault (1), a failing load or `lr` is load access fault (5), a
+  failing store, `sc` or amo is store access fault (7). The access is not sent to the bus at all.
+- Granularity is 4 bytes. `W` without `R` is reserved and `W` is dropped on write.
+- Linux in M-mode only programs entry 0 as "everything, rwx" (`head.S`) so it runs, and protects nothing.
+  Making user tasks unable to write kernel memory needs kernel support that sets regions per task.
+- Test: `tests/test_pmp.sv` (the checker) and `programs/pmp.S` (user mode against regions, locked entries).
+
 ## Not implemented
 
 - S-mode, `medeleg`/`mideleg`, `sret`, `mstatus` bits other than `MIE`/`MPIE`/`MPP` (`MPRV`, `SUM`...).
-- MMU, `satp`, page tables, `sfence.vma`; PMP (`pmpaddr*` is plain storage, no checks).
+- MMU, `satp`, page tables, `sfence.vma`; PMP entries 8 to 15 and `mstatus.MPRV` (see PMP).
 - C (compressed) and F/D; hardware misaligned loads/stores (they trap).
 - Debug module and triggers, `mcountinhibit`, `mconfigptr`.
 - More than one hart, more than one PLIC context, per byte error flags in the UART FIFO.

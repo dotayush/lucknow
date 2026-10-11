@@ -37,8 +37,8 @@ Findings that changed the plan:
 Still open (not needed for the shell, listed in order of usefulness):
 1. ~~busybox and a libc~~ done: Buildroot 2025.02.7, uClibc-ng, busybox as bFLT (elf2flt), `linux/buildroot/build.sh`, `linux/busybox.sh`, `linux/test_busybox.sh`. The shell runs pipes and several processes. Boot to the prompt is 92 million clocks, about a minute in Verilator. Needs 16 MiB of ram (8 MiB left no contiguous block for the 730 KiB busybox).
 2. ~~A FIFO in the uart~~ done: 16 byte FIFOs, `ns16550a`, trigger levels, character timeout. Linux types a whole line with 2 bit times between bytes.
-3. ~~A reference run on QEMU~~ done for command output (`linux/qemu.sh`). Not done: an instruction-by-instruction trace diff against QEMU (`-d exec` against `+trace`).
-4. PMP, so user tasks cannot overwrite the kernel.
+3. ~~A reference run on QEMU~~ done for command output (`linux/qemu.sh`). Instruction-by-instruction trace diff: `linux/tracediff.sh`, identical for the first 205,000 non-loop instructions, then a timing dependent difference in `printk` (`LINUX.md`).
+4. ~~PMP~~ done in hardware (8 entries, `CHIP.md`). The kernel does not use it to isolate tasks.
 5. Block device or a larger initramfs, FPGA bring-up (clock, memory controller, `timebase-frequency`).
 
 ## Why this is close
