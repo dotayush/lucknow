@@ -8,3 +8,5 @@
 /soc/k0/riscv/build
 /soc/k0/programs/build
 *.pdf
+/soc/k0/sim/obj
+/soc/k0/linux/out
