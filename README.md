@@ -5,32 +5,59 @@
 digital designs i've created at the heart of the city of lucknow, india!
 
 ### packages.
-- ./core l0
+- ./core/l0
   - 32-bit, single-cycle, compute core
   - rv32i + zicsr
   - all code executes in machine mode (m-mode)
-  - can be used as a design block in larger designs where a minimal central control unit is needed
-  - educational purpose
+  - harvard memory architecture
+  - traps follow the privileged spec (ecall, ebreak, illegal instruction, misaligned/out of bounds access)
+  - no interrupts, no minstret
+  - passes the official riscv-tests rv32ui suite and the rv32mi tests that apply to it (see below)
+  - can be used as a design block in systems where a minimal ccu
+  (central control unit) is required
+  - educational/hobby purpose
+
+- ./soc/k0 (work in progress)
+  - core l0 plus the m extension (mul, mulh, mulhsu, mulhu, div, divu, rem, remu)
+  - instruction cache, and the data memory is an external port (`mem_*`) instead of being built in
+  - passes riscv-tests rv32ui, rv32mi and rv32um
+  - not done yet: the a extension, and the bus (`bus.sv` is a sketch that doesn't compile)
+
+### riscv-tests.
+the cores are checked against the official [riscv-tests](https://github.com/riscv-software-src/riscv-tests) isa suites.
+needs `riscv32-unknown-elf-gcc` (set `TOOLCHAIN` if it isn't in `/opt/riscv32/bin`); the suite is cloned on first use
+into `core/l0/riscv-tests` (ignored by git).
+
+```bash
+./core/l0/riscv/run.sh            # everything
+./core/l0/riscv/run.sh addi lw    # only some tests
+./soc/k0/riscv/run.sh             # k0, includes rv32um
+```
+
+not run, because the feature doesn't exist in the core: rv32mi `illegal` (interrupts, vectored mtvec),
+`instret_overflow` (minstret), `breakpoint` (debug triggers), rv32ui `fence_i` (writable instruction memory)
+and `ma_data` (misaligned data access in hardware).
 
 ### icarus processing.
 > the following requires tools available in the
 > [oss-cad-suite](https://github.com/YosysHQ/oss-cad-suite-build?tab=readme-ov-file#installation)
 
 ```bash
-cd ./core_l0
+cd ./core/l0
 
 # single module compilation (for example: alu.sv)
+# every module has a matching ./tests/test_<module>.sv, they print "Test passed!" or "Test failed!"
 iverilog -g2012 -o ./tests/results/test_alu.out ./src/shared.sv ./src/alu.sv ./tests/test_alu.sv
 vvp ./tests/results/test_alu.out # generates a ./tests/results/test_alu.vcd file for gtkwave visualization
 
-# top module compilation (for example: control.sv)
+# top module compilation (control.sv), runs a small program and checks the registers
 iverilog -g2012 -o ./tests/results/test_control.out -c compile.f # compile.f ensures order of compilation is maintained
 vvp ./tests/results/test_control.out # generates a ./tests/results/test_control.vcd file for gtkwave visualization
 ```
 
 ### yosys processing.
 ```bash
-cd ./core_l0
+cd ./core/l0
 
 # start yosys
 yosys
@@ -47,7 +74,7 @@ show -format dot -prefix ./arch/design # write a dot for graphviz
 
 ### visualization.
 ```bash
-cd ./core_l0
+cd ./core/l0
 # if you've generated the dot file, you can visualize it with graphviz
 dot -Tsvg ./arch/design.dot -o ./arch/design_dot.svg
 
