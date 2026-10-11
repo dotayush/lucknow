@@ -5,6 +5,7 @@
 ./core/cache.sv
 ./core/uart.sv
 ./core/clint.sv
+./core/plic.sv
 ./core/regfile.sv
 ./core/csrfile.sv
 ./core/control.sv
