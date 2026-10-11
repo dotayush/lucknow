@@ -19,82 +19,73 @@ module memory #(
   output reg  [1:0]               mem_error
 );
 
-  localparam int ADDR_WIDTH = $clog2(WORDS);
+  localparam int INDEX_WIDTH = $clog2(WORDS);
 
   reg [DATA_WIDTH-1:0] mem [0:WORDS-1];
   reg mem_aligned;
 
-  integer i;
-  initial begin
-    if (MEM_INIT != "") begin
-      $readmemh(MEM_INIT, mem);
-    end
-    else begin
-      for (i = 0; i < WORDS; i = i + 1) mem[i] = '0;
-    end
-    mem_aligned = 1'b1;
-  end
+  wire [INDEX_WIDTH-1:0] word_index = addr[INDEX_WIDTH+1:2];
+  wire out_of_bounds = (addr[DATA_WIDTH-1:2] >= WORDS);
+  wire [4:0] lane_shift = {addr[1:0], 3'b000}; // bit offset of the addressed byte inside its word
 
-  always @(posedge clk) begin
-    mem_error <= NO_MEM_ERROR;
-    if (!rst_n) begin
-      for (i = 0; i < WORDS; i = i + 1) mem[i] <= '0;
-    end
-    else if (mem_write) begin
-      // compute truncated physical address and OOB
-      reg [DATA_WIDTH-1:0] paddr_w;
-      reg                 oob_w;
-      paddr_w = {{(DATA_WIDTH-ADDR_WIDTH){1'b0}}, addr[ADDR_WIDTH-1:0]};
-      oob_w   = (addr[DATA_WIDTH-1:2] >= WORDS);
-
-      if (oob_w) begin
-        mem_error = OUT_OF_BOUNDS;
-        $strobe("[%0t] warning (write): addr=%h out of bounds, wrapping=%h, mem_access_type=%b", $time, addr, paddr_w, mem_access_type);
-        mem[paddr_w[DATA_WIDTH-1:2]] <= data_in;
+  // power-on and reset state: the preloaded image if there is one, zeros otherwise.
+  task automatic restore;
+    integer i;
+    begin
+      if (MEM_INIT != "") begin
+        $readmemh(MEM_INIT, mem);
       end
       else begin
-        if (!mem_aligned) begin
-          mem_error = ADDRESS_MISALIGNED;
-          $strobe("[%0t] warning (write): addr=%h not aligned, mem_access_type=%b", $time, addr, mem_access_type);
-        end
-        else begin
-          mem[addr[DATA_WIDTH-1:2]] <= data_in;
-        end
+        for (i = 0; i < WORDS; i = i + 1) mem[i] = '0;
       end
     end
-  end
+  endtask
+
+  initial restore();
 
   always @* begin
     case (mem_access_type)
-      2'b10: mem_aligned = (addr[1:0] == 2'b00); // word
-      2'b01: mem_aligned = (addr[0]   == 1'b0 ); // half
-      default: mem_aligned = 1'b1;               // byte & default
+      WORD_MEM_ACCESS: mem_aligned = (addr[1:0] == 2'b00);
+      HALF_MEM_ACCESS: mem_aligned = (addr[0] == 1'b0);
+      default: mem_aligned = 1'b1; // byte & default
     endcase
+  end
 
-    data_out = '0;
-    if (!mem_read) begin
+  // a faulting access neither reads nor writes
+  always @* begin
+    mem_error = NO_MEM_ERROR;
+    if (mem_read || mem_write) begin
+      if (out_of_bounds) mem_error = OUT_OF_BOUNDS;
+      else if (!mem_aligned) mem_error = ADDRESS_MISALIGNED;
     end
-    else begin
-      reg [DATA_WIDTH-1:0] paddr_r;
-      reg                 oob_r;
-      paddr_r = {{(DATA_WIDTH-ADDR_WIDTH){1'b0}}, addr[ADDR_WIDTH-1:0]};
-      oob_r   = (addr[DATA_WIDTH-1:2] >= WORDS);
+  end
 
-      if (oob_r) begin
-        mem_error = OUT_OF_BOUNDS;
-        $strobe("[%0t] warning (read): addr=%h out of bounds, wrapping=%h, mem_access_type=%b", $time, addr, paddr_r, mem_access_type);
-        data_out = mem[paddr_r[DATA_WIDTH-1:2]];
-      end
-      else begin
-        if (!mem_aligned) begin
-          mem_error = ADDRESS_MISALIGNED;
-          $strobe("[%0t] warning (read): addr=%h not aligned, mem_access_type=%b", $time, addr, mem_access_type);
-          data_out = '0;
-        end
-        else begin
-          data_out = mem[addr[DATA_WIDTH-1:2]];
-        end
-      end
+  // sub-word reads return the addressed lane, zero-extended; the consumer sign-extends.
+  always @* begin
+    data_out = '0;
+    if (mem_read && mem_error == NO_MEM_ERROR) begin
+      case (mem_access_type)
+        BYTE_MEM_ACCESS: data_out = {{(DATA_WIDTH-8){1'b0}}, mem[word_index][lane_shift +: 8]};
+        HALF_MEM_ACCESS: data_out = {{(DATA_WIDTH-16){1'b0}}, mem[word_index][lane_shift +: 16]};
+        default: data_out = mem[word_index];
+      endcase
+    end
+  end
+
+  always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      restore();
+    end
+    else if (mem_write && mem_error == NO_MEM_ERROR) begin
+      case (mem_access_type)
+        BYTE_MEM_ACCESS: mem[word_index][lane_shift +: 8] <= data_in[7:0];
+        HALF_MEM_ACCESS: mem[word_index][lane_shift +: 16] <= data_in[15:0];
+        default: mem[word_index] <= data_in;
+      endcase
+    end
+    else if (mem_error != NO_MEM_ERROR) begin
+      $display("[%0t] warning: %s access addr=%h type=%b", $time,
+               (mem_error == OUT_OF_BOUNDS) ? "out of bounds" : "misaligned", addr, mem_access_type);
     end
   end
 

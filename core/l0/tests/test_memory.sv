@@ -2,7 +2,7 @@
 
 module test_memory;
 
-  localparam int WORDS = 1024; // 64 words of memory
+  localparam int WORDS = 64;
   localparam int DATA_WIDTH = 32;
   localparam real CLK_PERIOD = 10.0; // 100 MHz clock
   localparam real CLK_HALF_PERIOD = CLK_PERIOD / 2.0;
@@ -28,6 +28,7 @@ module test_memory;
   reg mem_read;
   reg [1:0] mem_access_type;
   wire [DATA_WIDTH-1:0] data_out;
+  wire [1:0] mem_error;
 
   // dut instantiation
   memory #(
@@ -41,7 +42,8 @@ module test_memory;
     .mem_write(mem_write),
     .mem_read(mem_read),
     .mem_access_type(mem_access_type),
-    .data_out(data_out)
+    .data_out(data_out),
+    .mem_error(mem_error)
   );
 
   // clock
@@ -81,7 +83,33 @@ module test_memory;
     end
   endtask
 
+  // access that must be rejected with `exp_err`, leaving memory untouched
+  task expect_error(input [DATA_WIDTH-1:0] ead, input [1:0] access_type, input write, input [1:0] exp_err);
+    begin
+      @(negedge clk);
+      addr = ead;
+      data_in = 32'hFFFFFFFF;
+      mem_access_type = access_type;
+      mem_write = write;
+      mem_read = !write;
+      #1;
+      if (mem_error !== exp_err) begin
+        test_failed = 1;
+        $display("[%0t] error: addr=0x%08x type=%b write=%b expected mem_error=%b, got=%b", $time, ead, access_type, write, exp_err, mem_error);
+      end
+      if (!write && data_out !== '0) begin
+        test_failed = 1;
+        $display("[%0t] error: faulting read at 0x%08x returned data 0x%08x", $time, ead, data_out);
+      end
+      @(negedge clk); // a rejected write must not land
+      mem_write = 0;
+      mem_read = 0;
+      data_in = '0;
+    end
+  endtask
+
   initial begin
+    test_failed = 0;
     $dumpfile("./tests/results/test_memory.vcd");
     $dumpvars(0, test_memory);
 
@@ -93,58 +121,76 @@ module test_memory;
     mem_access_type = WORD_MEM_ACCESS;
 
     // reset mem
-    rst_n = 0; // pull reset low
-    repeat (2) @(posedge clk); // @ second posedge clk
-    rst_n = 1; // release reset
+    rst_n = 0;
+    repeat (2) @(posedge clk);
+    rst_n = 1;
     @(posedge clk);
 
-    // read reset mem
-    read_word(32'h00000010, 32'h0, WORD_MEM_ACCESS);
+    // memory is zero after reset
     read_word(32'h00000000, 32'h0, WORD_MEM_ACCESS);
-    read_word(32'h00000008, 32'h0, WORD_MEM_ACCESS);
+    read_word(32'h00000010, 32'h0, WORD_MEM_ACCESS);
+    read_word((WORDS-1)*4, 32'h0, WORD_MEM_ACCESS);
 
-    repeat (1) @(posedge clk); // rest for two clock cycles (20ns)
-    mem_access_type = WORD_MEM_ACCESS; // set access type to WORD_MEM_ACCESS
-    repeat (5) begin
-      reg [DATA_WIDTH-1:0] rs;
-      reg [DATA_WIDTH-1:0] rd;
+    // word write/read, including first and last word
+    write_word(32'h00000000, 32'hAABBCCDD, WORD_MEM_ACCESS);
+    read_word(32'h00000000, 32'hAABBCCDD, WORD_MEM_ACCESS);
+    write_word((WORDS-1)*4, 32'h11223344, WORD_MEM_ACCESS);
+    read_word((WORDS-1)*4, 32'h11223344, WORD_MEM_ACCESS);
 
-      rs = {$random};
-      rd = {$random};
+    // byte lanes are returned zero-extended and addressed individually
+    read_word(32'h00000000, 32'h000000DD, BYTE_MEM_ACCESS);
+    read_word(32'h00000001, 32'h000000CC, BYTE_MEM_ACCESS);
+    read_word(32'h00000002, 32'h000000BB, BYTE_MEM_ACCESS);
+    read_word(32'h00000003, 32'h000000AA, BYTE_MEM_ACCESS);
 
-      write_word(rs, rd, mem_access_type); // write to memory
-      read_word(rs, rd, mem_access_type); // read from memory
+    // halfword lanes
+    read_word(32'h00000000, 32'h0000CCDD, HALF_MEM_ACCESS);
+    read_word(32'h00000002, 32'h0000AABB, HALF_MEM_ACCESS);
+
+    // a byte store only touches its own lane
+    write_word(32'h00000001, 32'h000000EE, BYTE_MEM_ACCESS);
+    read_word(32'h00000000, 32'hAABBEEDD, WORD_MEM_ACCESS);
+    write_word(32'h00000003, 32'h00000011, BYTE_MEM_ACCESS);
+    read_word(32'h00000000, 32'h11BBEEDD, WORD_MEM_ACCESS);
+
+    // a halfword store only touches its own half
+    write_word(32'h00000002, 32'h00005566, HALF_MEM_ACCESS);
+    read_word(32'h00000000, 32'h5566EEDD, WORD_MEM_ACCESS);
+    write_word(32'h00000000, 32'h00007788, HALF_MEM_ACCESS);
+    read_word(32'h00000000, 32'h55667788, WORD_MEM_ACCESS);
+
+    // misaligned accesses are rejected and do not modify memory
+    expect_error(32'h00000001, WORD_MEM_ACCESS, 0, ADDRESS_MISALIGNED);
+    expect_error(32'h00000002, WORD_MEM_ACCESS, 0, ADDRESS_MISALIGNED);
+    expect_error(32'h00000001, HALF_MEM_ACCESS, 0, ADDRESS_MISALIGNED);
+    expect_error(32'h00000003, WORD_MEM_ACCESS, 1, ADDRESS_MISALIGNED);
+    expect_error(32'h00000001, HALF_MEM_ACCESS, 1, ADDRESS_MISALIGNED);
+    read_word(32'h00000000, 32'h55667788, WORD_MEM_ACCESS);
+
+    // out of bounds accesses are rejected and do not wrap into valid memory
+    expect_error(WORDS*4, WORD_MEM_ACCESS, 0, OUT_OF_BOUNDS);
+    expect_error(WORDS*4, BYTE_MEM_ACCESS, 1, OUT_OF_BOUNDS);
+    expect_error(32'hFFFFFFFC, WORD_MEM_ACCESS, 1, OUT_OF_BOUNDS);
+    expect_error(32'h80000000, BYTE_MEM_ACCESS, 0, OUT_OF_BOUNDS);
+    read_word(32'h00000000, 32'h55667788, WORD_MEM_ACCESS);
+    read_word((WORDS-1)*4, 32'h11223344, WORD_MEM_ACCESS);
+
+    // no error is flagged when idle
+    @(negedge clk);
+    if (mem_error !== NO_MEM_ERROR) begin
+      test_failed = 1;
+      $display("[%0t] error: mem_error=%b while idle", $time, mem_error);
     end
 
-    mem_access_type = HALF_MEM_ACCESS; // set access type to HALF_MEM_ACCESS
-    repeat (5) begin
-      reg [DATA_WIDTH-1:0] rs;
-      reg [DATA_WIDTH-1:0] rd;
-      reg [15:0] half_data;
+    // reset clears memory again
+    rst_n = 0;
+    repeat (2) @(posedge clk);
+    rst_n = 1;
+    @(posedge clk);
+    read_word(32'h00000000, 32'h0, WORD_MEM_ACCESS);
+    read_word((WORDS-1)*4, 32'h0, WORD_MEM_ACCESS);
 
-      rs = {$random};
-      half_data = {$random};
-      rd = { {(DATA_WIDTH-1-15){1'b0}}, half_data }; // zero-extend to 32 bits
-
-      write_word(rs, rd, mem_access_type); // write to memory
-      read_word(rs, rd, mem_access_type); // read from memory
-    end
-
-    mem_access_type = BYTE_MEM_ACCESS; // set access type to BYTE_MEM_ACCESS
-    repeat (5) begin
-      reg [DATA_WIDTH-1:0] rs;
-      reg [DATA_WIDTH-1:0] rd;
-      reg [7:0] byte_data;
-
-      rs = {$random};
-      byte_data = {$random};
-      rd = { {(DATA_WIDTH-1-7){1'b0}}, byte_data }; // zero-extend to 32 bits
-
-      write_word(rs, rd, mem_access_type); // write to memory
-      read_word(rs, rd, mem_access_type); // read from memory
-    end
-
-    repeat (2) @(posedge clk); // wait for clock edges to capture the last event.
+    repeat (2) @(posedge clk);
     finish;
   end
 
