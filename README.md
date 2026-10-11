@@ -40,7 +40,11 @@ digital designs i've created at the heart of the city of lucknow, india!
     `mtvec` direct and vectored mode; `wfi` is a no-op
   - counters: `mcycle`/`minstret` (64 bit, `mcycleh`/`minstreth`), `cycle`/`instret` aliases, `time`/`timeh` read
     from the clint's `mtime`
-  - `mstatus` only has MIE, MPIE and MPP (always machine mode), `mip` is read only
+  - machine and user mode: `mstatus.MPP` (00 or 11), `mret` enters the mode in `MPP`, ecall from user is cause 8,
+    machine csrs, `mret`, `wfi` and counters not in `mcounteren` are illegal in user mode, writing a read only csr
+    is illegal; no pmp. `mstatus` has MIE, MPIE and MPP only, `mip` is read only
+  - boot rom: `a0` = 0, `a1` = device tree at `0x807F_0000`, jumps to ram
+  - runs a no-mmu Linux 6.12 to a shell, see below
   - `soc.sv` wires the core to the bus; unmapped accesses, stores to the rom, non-byte uart accesses and
     non-word clint or plic accesses are access faults
   - passes riscv-tests rv32ui (including `fence_i`), rv32mi (including `illegal` and `instret_overflow`),
@@ -81,6 +85,18 @@ IFLAGS="-Ptest_hello.FETCH_WAIT=2 -Ptest_hello.DATA_WAIT=3" ./soc/k0/programs/ru
 # input bytes back to back (the default leaves 2 bit times between them); with slow memories and no gap the handler
 # can't keep up with a uart that has no fifo, bytes are lost (overrun), which is what the hardware should do
 IFLAGS="-Ptest_hello.RX_GAP=0" ./soc/k0/programs/run.sh uartrx
+```
+
+### linux (no mmu) on k0.
+the plan and its status is in [`soc/k0/docs/PLAN.md`](./soc/k0/docs/PLAN.md). needs the riscv32 toolchain, verilator, `bc`,
+`flex`, `bison`, python3 and a network connection for the first kernel download (~140 MB).
+
+```bash
+./soc/k0/sim/build.sh        # verilator model, 8 MiB ram
+./soc/k0/linux/build.sh      # downloads linux 6.12.112, builds Image, k0.dtb and the init
+./soc/k0/linux/run.sh        # boots to the "k0# " prompt (~30 s)
+./soc/k0/linux/test.sh       # boots, types commands, checks the answers
+./soc/k0/programs/run.sh umode   # user mode, bare metal
 ```
 
 ### icarus processing.

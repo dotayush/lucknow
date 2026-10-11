@@ -12,7 +12,7 @@ addresses.
 |---|---|
 | RV32IMA + Zicsr | base integer set, **M** multiply/divide, **A** atomics, and CSR instructions |
 | hart | a hardware thread: one core's instruction stream. k0 has one (`mhartid = 0`) |
-| M-mode | machine mode, the highest privilege level, and the only one k0 has |
+| M-mode / U-mode | machine mode, the highest privilege level, and user mode, the lowest. k0 has these two (no supervisor mode) |
 | CSR | control and status register, a numbered core register such as `mtvec` |
 | trap | the core abandons the current instruction and jumps to a handler. An *exception* is caused by the instruction, an *interrupt* by something outside |
 | `mepc` / `mcause` / `mtval` / `mtvec` | where to resume / why / extra detail (bad address or instruction) / where the handler is. `mcause` bit 31 set means interrupt |
@@ -29,7 +29,7 @@ addresses.
 
 ## At a glance
 
-- RV32IMA + Zicsr, M-mode only, no C (compressed), no F/D, no Zifencei-specific hardware (`fence.i` works because code and data share ram).
+- RV32IMA + Zicsr, machine and user mode, no C (compressed), no F/D, no Zifencei-specific hardware (`fence.i` works because code and data share ram).
 - Single-issue, in order, non-pipelined: one instruction at a time, **one clock per instruction** when memory answers immediately. Loads and stores that hit slow memory, and AMOs (two transfers), take more.
 - Fully synchronous apart from async active-low reset (`rst_n`).
 - Reset vector `0x0000_1000` (the boot rom).
@@ -46,12 +46,12 @@ addresses.
 
 Everything else is an access fault. So is: a store to the rom, a non-byte access to the
 uart, a non-word or misaligned access to the clint or plic, and fetch from anywhere
-but rom or ram. The boot rom holds two instructions that jump to `0x8000_0000`; the program
+but rom or ram. The boot rom holds four instructions: `a1` = `0x807F_0000` (where the device tree goes for an 8 MiB ram), `a0` = 0 (hart id), jump to `0x8000_0000`; the program
 image is preloaded into ram with `RAM_INIT` (a `$readmemh` hex file, one word per line).
 This is how every test and program starts: there is no loader or flash yet.
 
 The instruction port and the data port see the *same* ram array, so a store is visible to
-the next fetch. `memory/bootrom.hex` is only 2 words; the rest of the rom reads 0.
+the next fetch. `memory/bootrom.hex` is only 4 words; the rest of the rom reads 0.
 
 ## Instructions
 
@@ -65,7 +65,7 @@ the next fetch. `memory/bootrom.hex` is only 2 words; the rest of the rom reads 
   - An AMO is two bus transfers (read, then write) of one instruction. An interrupt cannot land between them: the whole AMO is restarted after `mret`.
   - Misaligned `sc`/AMO traps even when `sc` would have failed.
   - Reported as a *load* fault for `lr`, a *store* fault for `sc` and the AMOs.
-- `wfi` is a no-op (the core keeps running, software loops around it).
+- `wfi` is a no-op (the core keeps running, software loops around it). In user mode it is an illegal instruction.
 - `fence` is a no-op; `fence.i` is a no-op that is correct because fetch always sees the latest store.
 
 ## Traps
@@ -85,7 +85,21 @@ Exceptions use the same codes as l0 (0..7 and 11, see the l0 doc). The extra one
 - An interrupt is taken when `mstatus.MIE` is set and `mie & mip` is non-zero.
 - Handler address: `mtvec` bit 0 = 0 *direct* (everything to the base), 1 *vectored*
   (interrupts to `base + 4 * code`, exceptions still to the base).
-- Trap entry: `mstatus.MPIE = MIE`, `MIE = 0`, `MPP = 11`; `mret` reverses it.
+- Trap entry: `mstatus.MPIE = MIE`, `MIE = 0`, `MPP` = the mode the trap came from, the hart enters machine mode.
+  `mret`: `MIE = MPIE`, `MPIE = 1`, the hart goes to the mode in `MPP`, `MPP = 00` (user).
+
+### Privilege
+
+- Two modes: machine (`MPP` = `11`) and user (`00`). Reset is machine mode. `MPP` is WARL: any other value reads `00`.
+- No physical memory protection: user mode may access everything the machine can (the kernel of a
+  no-MMU system trusts its tasks). `pmpaddr*`/`pmpcfg*` are plain storage.
+- In user mode, an *illegal instruction* exception is raised by: any csr whose address bits 11:10 are `11`
+  *and* is written, any csr of a higher level (address bits 9:8 not `00`: everything `mstatus`, `mtvec`, `mepc`...),
+  `cycle/time/instret(h)` unless the matching bit of `mcounteren` is set, `mret` and `wfi`.
+- Writing a read only csr (address bits 11:10 = `11`, with a csr instruction that actually writes) is illegal
+  in every mode.
+- `ecall` from user mode is cause 8, from machine mode 11.
+- Interrupts for machine mode are always enabled while the hart is in user mode, whatever `mstatus.MIE` says.
 - A trapping or stalled instruction does not retire.
 
 ## CSRs
@@ -96,8 +110,9 @@ trapping. Where behaviour exists:
 
 | CSR | address | notes |
 |---|---|---|
-| `mstatus` | 0x300 | only `MIE` (3) and `MPIE` (7) are writable. `MPP` always reads `11`. Everything else reads 0 |
-| `misa` | 0x301 | `0x4000_1101`: RV32, I, M, A. Read only |
+| `mstatus` | 0x300 | `MIE` (3), `MPIE` (7) and `MPP` (12:11, `00` or `11`) are writable. Everything else reads 0 |
+| `misa` | 0x301 | `0x4010_1101`: RV32, I, M, A, U. Read only |
+| `mcounteren` | 0x306 | plain storage, bits 0..2 gate `cycle`, `time`, `instret` in user mode |
 | `mie` | 0x304 | writable bits 3, 7, 11 only |
 | `mtvec` | 0x305 | bit 1 forced to 0; mode = bit 0 |
 | `mepc` `mcause` `mtval` | 0x341..0x343 | written on traps |
@@ -194,10 +209,24 @@ lowest id on a tie. Only the UART is connected (source 10).
 
 ## Not implemented
 
-- S-mode and U-mode (`MPP` is stuck at `11`), `medeleg`/`mideleg`, `sret`.
+- S-mode, `medeleg`/`mideleg`, `sret`, `mstatus` bits other than `MIE`/`MPIE`/`MPP` (`MPRV`, `SUM`...).
 - MMU, `satp`, page tables, `sfence.vma`; PMP (`pmpaddr*` is plain storage, no checks).
 - C (compressed) and F/D; hardware misaligned loads/stores (they trap).
-- Debug module and triggers, `mcounteren`/`mcountinhibit` behaviour, `mconfigptr`.
+- Debug module and triggers, `mcountinhibit`, `mconfigptr`.
 - More than one hart, more than one PLIC context, FIFOs in the UART.
 - Any storage device, timer other than CLINT, interrupt sources other than the UART.
 - Ram is small by default (32 KiB). Raise `RAM_WORDS` for anything larger.
+
+## Running Linux
+
+k0 boots a no-MMU Linux 6.12 (M-mode kernel build, `CONFIG_RISCV_M_MODE`, user tasks in user mode)
+to a shell on the uart. Everything for this is in `linux/` and `sim/`, the steps are in `docs/PLAN.md`.
+
+- `sim/build.sh` builds a Verilator model of the soc with 8 MiB of ram. `sim/obj/Vsoc` loads binary
+  images into ram, drives the uart receive line from a file and prints what the uart sends. Roughly
+  1.7 million instructions per second of host time.
+- `linux/build.sh` builds the kernel, the device tree (`k0.dts`) and a small freestanding `init` with a
+  shell (`init/init.c`, a bFLT binary, no libc). `linux/run.sh` boots it, `linux/test.sh` boots it and types commands.
+- The kernel needs: `a0` = hart id and `a1` = device tree pointer (the boot rom does that), ram at
+  `0x8000_0000`, the kernel linked there, the uart as `ns16450`, CLINT, PLIC, `timebase-frequency`
+  equal to the clock (`mtime` counts clocks). Misaligned loads/stores trap and are emulated by the kernel.
