@@ -1,0 +1,107 @@
+[*]
+[*] GTKWave Analyzer v3.3.118 (w)1999-2023 BSI
+[*] Sun Aug 24 11:20:17 2025
+[*]
+[dumpfile] "/home/ayush/personal/risc-core/core_l0/tests/results/test_control.vcd"
+[dumpfile_mtime] "Sun Aug 24 08:59:45 2025"
+[dumpfile_size] 42733
+[savefile] "/home/ayush/personal/risc-core/core_l0/tests/results/test_control.gtkw"
+[timestart] 0
+[size] 1920 1001
+[pos] -1 -1
+*-15.462086 47100 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+[treeopen] test_control.
+[treeopen] test_control.dut.
+[sst_width] 286
+[signals_width] 303
+[sst_expanded] 1
+[sst_vpaned_height] 296
+@29
+test_control.dut.clk
+@28
+test_control.dut.rst_n
+@20000
+-
+@24
+test_control.dut.pc[31:0]
+test_control.dut.next_pc[31:0]
+@22
+test_control.dut.instruction[31:0]
+@28
+test_control.dut.f3[2:0]
+@22
+test_control.dut.f7[6:0]
+test_control.dut.shift_amount[4:0]
+@20000
+-
+@22
+test_control.dut.alu_a[31:0]
+test_control.dut.alu_b[31:0]
+test_control.dut.alu_op[4:0]
+test_control.dut.alu_result[31:0]
+@28
+test_control.dut.overflow
+test_control.dut.carry
+test_control.dut.zero
+@20000
+-
+@28
+test_control.dut.reg_write
+@22
+test_control.dut.rs1[4:0]
+@24
+test_control.dut.rs1_data[31:0]
+@22
+test_control.dut.rs2[4:0]
+@24
+test_control.dut.rs2_data[31:0]
+@22
+test_control.dut.rd[4:0]
+test_control.dut.rd_data[31:0]
+@20000
+-
+@28
+test_control.dut.mem_write
+test_control.dut.mem_read
+test_control.dut.mem_access_type[1:0]
+@24
+test_control.dut.addr[31:0]
+@22
+test_control.dut.data_in[31:0]
+test_control.dut.data_out[31:0]
+@20000
+-
+@24
+test_control.dut.unextended_data[31:0]
+@28
+test_control.dut.sx_op[4:0]
+@24
+test_control.dut.sign_extended_data[31:0]
+test_control.dut.unextended_data2[31:0]
+@22
+test_control.dut.sx_op2[4:0]
+@24
+test_control.dut.sign_extended_data2[31:0]
+@20000
+-
+@22
+test_control.dut.csr_addr[11:0]
+@28
+test_control.dut.csr_op[1:0]
+@22
+test_control.dut.csr_rdata[31:0]
+test_control.dut.csr_wdata[31:0]
+@20000
+-
+@28
+test_control.dut.trap
+@22
+test_control.dut.trap_cause[3:0]
+@28
+test_control.dut.trap_handled
+@22
+test_control.dut.trap_pc[31:0]
+test_control.dut.trap_target_pc[31:0]
+test_control.dut.trap_value[31:0]
+[pattern_trace] 1
+[pattern_trace] 0
