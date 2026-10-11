@@ -2,56 +2,31 @@
 
 // runs one riscv-tests image to completion. the test reports its result by
 // writing to `tohost`: 1 means pass, anything else is (failing test number << 1) | 1.
+// the image is linked at the ram base and loaded straight into the ram, the core
+// boots through the boot rom like it would on a board.
 module test_riscv;
 
   parameter IMAGE = "";                // hex image (one 32-bit word per line)
   parameter logic [31:0] TOHOST = 0;   // address of the tohost symbol
-  parameter WORDS = 8192;              // 32 KiB
-  parameter MAX_CYCLES = 200000;
+  parameter WORDS = 8192;              // 32 KiB of ram
+  parameter MAX_CYCLES = 400000;
+  parameter FETCH_WAIT = 0;            // wait states on the memories, see bus
+  parameter DATA_WAIT = 0;
 
   localparam real CLK_HALF_PERIOD = 5.0;
+  localparam [31:0] RAM_BASE = 32'h8000_0000;
 
   reg clk;
   reg rst_n;
 
-  wire [1:0] mem_error;
-  wire mem_read;
-  wire mem_write;
-  wire [1:0] mem_access_type;
-  wire [31:0] mem_addr;
-  wire [31:0] mem_data_out;
-  wire [31:0] mem_data_in;
-
-  control #(
-    .CACHE_SIZE(WORDS),
-    .IMEM_INIT(IMAGE)
+  soc #(
+    .RAM_INIT(IMAGE),
+    .RAM_WORDS(WORDS),
+    .FETCH_WAIT(FETCH_WAIT),
+    .DATA_WAIT(DATA_WAIT)
   ) dut (
     .clk(clk),
-    .rst_n(rst_n),
-    .core_id(5'd0),
-    .mem_error(mem_error),
-    .mem_read(mem_read),
-    .mem_write(mem_write),
-    .mem_access_type(mem_access_type),
-    .mem_addr(mem_addr),
-    .mem_data_out(mem_data_out),
-    .mem_data_in(mem_data_in)
-  );
-
-  // data memory, holds the same image as the instruction cache
-  cache #(
-    .CACHE_SIZE(WORDS),
-    .MEM_INIT(IMAGE)
-  ) ram (
-    .clk(clk),
-    .rst_n(rst_n),
-    .mem_write(mem_write),
-    .mem_read(mem_read),
-    .mem_access_type(mem_access_type),
-    .addr(mem_addr),
-    .data_in(mem_data_out),
-    .data_out(mem_data_in),
-    .mem_error(mem_error)
+    .rst_n(rst_n)
   );
 
   initial begin
@@ -65,7 +40,7 @@ module test_riscv;
     #1 rst_n = 1;
   end
 
-  wire [31:0] tohost_word = ram.mem[TOHOST >> 2];
+  wire [31:0] tohost_word = dut.bus_inst.ram_inst.mem[(TOHOST - RAM_BASE) >> 2];
 
   integer cycles;
   initial begin
@@ -82,7 +57,7 @@ module test_riscv;
         $finish;
       end
       if (cycles >= MAX_CYCLES) begin
-        $display("FAIL: timeout after %0d cycles, pc=0x%08x", cycles, dut.pc);
+        $display("FAIL: timeout after %0d cycles, pc=0x%08x", cycles, dut.core_inst.pc);
         $finish;
       end
     end
