@@ -46,6 +46,7 @@ module test_uart;
   integer rx_count;
   integer rx_bad_frames;
   integer b;
+  integer fi;
   initial begin
     rx_count = 0;
     rx_bad_frames = 0;
@@ -181,7 +182,7 @@ module test_uart;
     reg_expect(3'd7, 8'hA5, "SCR");
     // writing the read only registers changes nothing
     reg_write(3'd5, 8'hFF);
-    reg_write(3'd2, 8'hFF);
+    reg_write(3'd2, 8'hFE);
     reg_expect(3'd5, 8'h60, "LSR after write");
     reg_expect(3'd2, 8'h01, "IIR after write");
     if (rx_count != 0) begin
@@ -407,6 +408,77 @@ module test_uart;
     reg_write(3'd3, 8'h03);
     reg_expect(3'd1, 8'h01, "IER untouched by the DLM write");
     reg_read_expect(3'd0, 8'h3C, "RBR is back with DLAB clear");
+
+    // ================= 16550A fifos =================
+    reg_write(3'd1, 8'h00);
+    reg_read_expect(3'd2, 8'h01, "IIR before fifos are enabled has no fifo bits");
+    reg_write(3'd2, 8'hC1); // enable, trigger level 14
+    reg_expect(3'd2, 8'hC1, "IIR fifo bits");
+
+    // transmit: 5 bytes written back to back are all sent, in order
+    sent_before = rx_count;
+    reg_write(3'd0, 8'h41);
+    reg_write(3'd0, 8'h42);
+    reg_write(3'd0, 8'h43);
+    reg_write(3'd0, 8'h44);
+    reg_write(3'd0, 8'h45);
+    reg_expect(3'd5, 8'h00, "LSR THRE and TEMT clear while the fifo holds bytes");
+    repeat (60 * CLKS_PER_BIT) @(posedge clk);
+    if (rx_count != sent_before + 5 || rx_bytes[sent_before] !== 8'h41 || rx_bytes[sent_before+4] !== 8'h45) begin
+      test_failed = 1;
+      $display("[%0t] error: fifo transmit sent %0d bytes, first 0x%02x last 0x%02x", $time,
+               rx_count - sent_before, rx_bytes[sent_before], rx_bytes[sent_before+4]);
+    end
+    reg_expect(3'd5, 8'h60, "LSR THRE and TEMT after the fifo drained");
+
+    // receive: 5 bytes queue up, trigger level 14 means no data interrupt yet, only the timeout
+    reg_write(3'd1, 8'h01);
+    rx_send(8'h51, 1'b1);
+    rx_send(8'h52, 1'b1);
+    rx_send(8'h53, 1'b1);
+    rx_send(8'h54, 1'b1);
+    rx_send(8'h55, 1'b1);
+    repeat (2) @(negedge clk);
+    expect_irq(0, "below the trigger level, before the timeout");
+    reg_expect(3'd5, 8'h61, "LSR DR with 5 bytes");
+    repeat (45 * CLKS_PER_BIT) @(posedge clk);
+    expect_irq(1, "character timeout");
+    reg_expect(3'd2, 8'hCC, "IIR character timeout");
+    reg_read_expect(3'd0, 8'h51, "fifo byte 1");
+    reg_read_expect(3'd0, 8'h52, "fifo byte 2");
+    reg_read_expect(3'd0, 8'h53, "fifo byte 3");
+    expect_irq(0, "timeout restarts after a read");
+    reg_read_expect(3'd0, 8'h54, "fifo byte 4");
+    reg_read_expect(3'd0, 8'h55, "fifo byte 5");
+    reg_expect(3'd5, 8'h60, "LSR empty after the reads");
+    expect_irq(0, "empty fifo, no interrupt");
+
+    // trigger level 4
+    reg_write(3'd2, 8'h41);
+    rx_send(8'h61, 1'b1);
+    rx_send(8'h62, 1'b1);
+    rx_send(8'h63, 1'b1);
+    repeat (2) @(negedge clk);
+    expect_irq(0, "3 bytes, level 4");
+    rx_send(8'h64, 1'b1);
+    repeat (2) @(negedge clk);
+    expect_irq(1, "4 bytes, level 4");
+    reg_expect(3'd2, 8'hC4, "IIR received data");
+
+    // 16 bytes fit, the 17th overruns and the first 16 stay
+    reg_write(3'd2, 8'hC3); // bit 1: clear the receive fifo
+    reg_expect(3'd5, 8'h60, "receive fifo cleared by FCR bit 1");
+    for (fi = 0; fi < 17; fi = fi + 1) rx_send(8'hA0 + fi[7:0], 1'b1);
+    repeat (2) @(negedge clk);
+    reg_expect(3'd5, 8'h63, "LSR DR and OE with 17 bytes sent");
+    for (fi = 0; fi < 16; fi = fi + 1) reg_read_expect(3'd0, 8'hA0 + fi[7:0], "fifo byte");
+    reg_read_expect(3'd5, 8'h62, "fifo empty after 16 reads, OE still set until LSR is read");
+    reg_expect(3'd5, 8'h60, "OE cleared by the LSR read");
+
+    // switching the fifos off goes back to 16450 behaviour
+    reg_write(3'd2, 8'h00);
+    reg_expect(3'd2, 8'h01, "IIR fifo bits clear");
+    reg_write(3'd1, 8'h00);
 
     finish;
   end
