@@ -27,7 +27,8 @@ module test_control;
 
   soc fast (
     .clk(clk),
-    .rst_n(rst_n)
+    .rst_n(rst_n),
+    .uart_rx(1'b1)
   );
 
   soc #(
@@ -35,7 +36,8 @@ module test_control;
     .DATA_WAIT(3)
   ) slow (
     .clk(clk),
-    .rst_n(rst_n)
+    .rst_n(rst_n),
+    .uart_rx(1'b1)
   );
 
   // clock

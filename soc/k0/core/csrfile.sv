@@ -27,6 +27,7 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096) (
     // interrupts, from the outside world
     input wire irq_software, // clint msip
     input wire irq_timer, // clint mtip
+    input wire irq_external, // plic meip
     output wire irq_pending, // an enabled interrupt is pending and mstatus.MIE is set: take it now
     output wire [3:0] irq_code,
 
@@ -37,7 +38,7 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096) (
 
   localparam [11:0] IRQ_SOFTWARE = 12'h008; // mip/mie bit 3
   localparam [11:0] IRQ_TIMER = 12'h080; // mip/mie bit 7
-  localparam [11:0] IRQ_EXTERNAL = 12'h800; // mip/mie bit 11, nothing drives it yet
+  localparam [11:0] IRQ_EXTERNAL = 12'h800; // mip/mie bit 11
   localparam [DATA_WIDTH-1:0] MIE_MASK = 32'h0000_0888;
   localparam [DATA_WIDTH-1:0] MSTATUS_MASK = 32'h0000_0088; // writable: MIE (bit 3), MPIE (bit 7)
   localparam [DATA_WIDTH-1:0] MSTATUS_MPP_M = 32'h0000_1800;
@@ -58,7 +59,7 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096) (
   assign mtvec_vectored = csr_array[CSR_MTVEC][0];
 
   // mip has no storage: it is what the outside world says
-  wire [DATA_WIDTH-1:0] mip = (irq_software ? IRQ_SOFTWARE : 0) | (irq_timer ? IRQ_TIMER : 0);
+  wire [DATA_WIDTH-1:0] mip = (irq_software ? IRQ_SOFTWARE : 0) | (irq_timer ? IRQ_TIMER : 0) | (irq_external ? IRQ_EXTERNAL : 0);
   wire [DATA_WIDTH-1:0] enabled = mip & csr_array[CSR_MIE];
   assign irq_pending = csr_array[CSR_MSTATUS][3] && (enabled != 0);
   // priority among machine level interrupts: external, software, timer

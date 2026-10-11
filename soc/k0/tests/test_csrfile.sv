@@ -36,6 +36,7 @@ module test_csrfile;
   wire mtvec_vectored;
   reg irq_software;
   reg irq_timer;
+  reg irq_external;
   wire irq_pending;
   wire [3:0] irq_code;
   reg [63:0] time_value;
@@ -58,6 +59,7 @@ module test_csrfile;
     .mtvec_vectored(mtvec_vectored),
     .irq_software(irq_software),
     .irq_timer(irq_timer),
+    .irq_external(irq_external),
     .irq_pending(irq_pending),
     .irq_code(irq_code),
     .time_value(time_value),
@@ -113,6 +115,7 @@ module test_csrfile;
     trap_interrupt = 0;
     irq_software = 0;
     irq_timer = 0;
+    irq_external = 0;
     time_value = 64'h0123_4567_89AB_CDEF;
     retire = 0;
     trap_cause = 0;
@@ -351,9 +354,27 @@ module test_csrfile;
     write_csr(CSR_MIE, CSR_SET, 32'h88);
     irq_software = 0;
     irq_timer = 0;
+    irq_external = 0;
     expect_irq("nothing pending", 0, 0);
     write_csr(CSR_MIP, CSR_SET, 32'h88); // mip cannot be written from software
     expect_csr("mip ignores writes", CSR_MIP, 32'h0);
+
+    // the external interrupt (plic meip): mip bit 11, enabled by mie bit 11, wins over the others
+    write_csr(CSR_MIE, CSR_CLEAR, 32'h800);
+    irq_external = 1;
+    expect_csr("mip shows the external interrupt", CSR_MIP, 32'h0000_0800);
+    expect_irq("MEIE clear: not taken", 0, 0);
+    write_csr(CSR_MIE, CSR_SET, 32'h800);
+    expect_irq("external interrupt", 1, 4'd11);
+    irq_software = 1;
+    irq_timer = 1;
+    expect_csr("mip shows all three", CSR_MIP, 32'h0000_0888);
+    expect_irq("external wins over software and timer", 1, 4'd11);
+    irq_external = 0;
+    expect_irq("software next", 1, 4'd3);
+    irq_software = 0;
+    irq_timer = 0;
+    expect_irq("nothing pending again", 0, 0);
 
     // an interrupt trap records the interrupt bit in mcause
     @(negedge clk);

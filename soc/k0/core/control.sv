@@ -36,6 +36,7 @@ module control #(
     // interrupts and time, from the clint
     input wire irq_software,
     input wire irq_timer,
+    input wire irq_external,
     input wire [63:0] time_value
 );
 
@@ -824,6 +825,7 @@ module control #(
     .mtvec_vectored(mtvec_vectored),
     .irq_software(irq_software),
     .irq_timer(irq_timer),
+    .irq_external(irq_external),
     .irq_pending(irq_pending),
     .irq_code(irq_code),
     .time_value(time_value),
