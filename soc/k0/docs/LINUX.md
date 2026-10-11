@@ -83,6 +83,12 @@ Without root, `apt-get download qemu-system-riscv qemu-system-common qemu-system
 output is identical to the model's; the boot log differs (timestamps, `base_baud`, the PLIC size) because
 the hardware description does.
 
+
+`WINDOW=1 ./linux/qemu.sh` opens the console in QEMU's own GTK window instead of the terminal. It needs the
+`ui-gtk.so` module (Debian `qemu-system-gui`, unpacked like the others; point `QEMU_MODULES=` at its
+directory) and a `$DISPLAY`. The kernel has no framebuffer driver, so the window is the same serial text
+console the model's uart carries, not graphics.
+
 ## Trace diff against QEMU
 
 `linux/tracediff.sh` runs the first N instructions on the model and on QEMU (same kernel, same device
