@@ -19,6 +19,7 @@
     .globl _start
 _start:
     li    s0, UART
+    csrw  mcounteren, zero       # the reset value lets user mode read the counters, this test wants it not to
     la    t0, handler
     csrw  mtvec, t0
     li    s1, MTIMECMP

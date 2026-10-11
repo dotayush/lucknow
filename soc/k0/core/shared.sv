@@ -194,6 +194,7 @@ package isa_shared;
     // machine trap and interrupt related CSRs
     CSR_MTVEC = 12'h305, // Machine trap-handler base address
     CSR_MCOUNTEREN = 12'h306, // counters readable from user mode
+    CSR_MCOUNTINHIBIT = 12'h320, // counters that do not count
     CSR_MCAUSE = 12'h342, // Machine trap cause
     CSR_MTVAL = 12'h343, // Machine bad address or instruction
     CSR_MEPC = 12'h341, // Machine trap program counter

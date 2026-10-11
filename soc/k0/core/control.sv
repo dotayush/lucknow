@@ -6,7 +6,8 @@
 module control #(
   parameter DATA_WIDTH = 32,
   parameter RESET_VECTOR = 32'h0000_1000, // boot rom
-  parameter PMP_ENTRIES = 8
+  parameter PMP_ENTRIES = 8,
+  parameter HPM_COUNTERS = 8
 ) (
     // global signals
     input wire clk,
@@ -146,7 +147,7 @@ module control #(
   wire is_system_op = (opcode == SYSTEM);
   wire priv_illegal = priv_user && is_system_op && (f3 == SYS_ECALL_EBREAK ?
       (sys_field == SYS_FUN_MRET || sys_field == SYS_FUN_WFI) :
-      ((sys_field[9:8] != 2'b00) || (sys_field[11:10] == 2'b11 && !(sys_field[4:0] <= 5'd2 && mcounteren[sys_field[4:0]]))));
+      ((sys_field[9:8] != 2'b00) || (sys_field[11:10] == 2'b11 && !mcounteren[sys_field[4:0]])));
   wire csr_read_only_write = is_system_op && (f3 != SYS_ECALL_EBREAK) && (csr_op != CSR_NOP) && (sys_field[11:10] == 2'b11); // writing a read only csr
   wire csr_to_rd = (opcode == SYSTEM) && (f3 != SYS_ECALL_EBREAK); // csr instructions return the old csr value in rd
 
@@ -826,6 +827,31 @@ module control #(
     .sign_extended_data(sign_extended_data2)
   );
 
+  // events for the hpm counters: one clock pulses. 1 load, 2 store, 3 branch taken, 4 branch not taken,
+  // 5 jump, 6 exception, 7 interrupt, 8 fetch wait clock, 9 data wait clock, 10 mul/div, 11 amo,
+  // 12 csr instruction, 13 clock in user mode, 14 access fault, 15 misaligned access
+  wire retiring = !stall && !trap;
+  wire [15:0] hpm_events = {
+    trap && !trap_interrupt && (trap_cause == TRAP_INST_ADDR_MISALIGNED || trap_cause == TRAP_LOAD_ADDR_MISALIGNED ||
+                                trap_cause == TRAP_STORE_ADDR_MISALIGNED),                    // 15
+    trap && !trap_interrupt && (trap_cause == TRAP_INST_ACCESS_FAULT || trap_cause == TRAP_LOAD_ACCESS_FAULT ||
+                                trap_cause == TRAP_STORE_ACCESS_FAULT),                       // 14
+    priv_user,                                                                                // 13
+    retiring && is_system_op && f3 != SYS_ECALL_EBREAK,                                       // 12
+    retiring && is_amo && !illegal_amo,                                                       // 11
+    retiring && opcode == 7'b0110011 && f7 == 7'b0000001,                                     // 10
+    data_req && !mem_ready,                                                                   // 9
+    !imem_ready,                                                                              // 8
+    trap && trap_interrupt,                                                                   // 7
+    trap && !trap_interrupt,                                                                  // 6
+    retiring && (opcode == JAL || opcode == JALR),                                            // 5
+    retiring && opcode == BRANCH && inst_next_pc == pc + 32'd4,                               // 4
+    retiring && opcode == BRANCH && inst_next_pc != pc + 32'd4,                               // 3
+    retiring && opcode == STORE,                                                              // 2
+    retiring && opcode == LOAD,                                                               // 1
+    1'b0                                                                                      // 0
+  };
+
   pmp #(.N(PMP_ENTRIES)) pmp_fetch_inst (
     .cfg(pmp_cfg), .addr(pmp_addr), .user(priv_user), .a(pc), .r(1'b0), .w(1'b0), .x(1'b1), .ok(pmp_fetch_ok)
   );
@@ -839,7 +865,8 @@ module control #(
   csrfile #(
     .DATA_WIDTH(DATA_WIDTH),
     .COUNT(4096),
-    .PMP_ENTRIES(PMP_ENTRIES)
+    .PMP_ENTRIES(PMP_ENTRIES),
+    .HPM_COUNTERS(HPM_COUNTERS)
   ) csrfile_inst (
     .clk(clk),
     .rst_n(rst_n),
@@ -865,6 +892,7 @@ module control #(
     .irq_pending(irq_pending),
     .irq_code(irq_code),
     .time_value(time_value),
+    .hpm_events(hpm_events),
     .retire(!stall && !trap)
   );
 
