@@ -5,8 +5,7 @@
 
 module control #(
   parameter DATA_WIDTH = 32,
-  parameter CACHE_SIZE = 128,
-  parameter IMEM_INIT = "./memory/test_rom.hex" // program image loaded into the instruction cache
+  parameter RESET_VECTOR = 32'h0000_1000 // boot rom
 ) (
     // global signals
     input wire clk,
@@ -15,14 +14,24 @@ module control #(
     // core id
     input wire [4:0] core_id,
 
-    // memory interface
-    input wire [1:0] mem_error,
+    // instruction port. a fetch is always requested, imem_data/imem_error are valid when imem_ready is high.
+    output wire [DATA_WIDTH-1:0] imem_addr,
+    input wire [DATA_WIDTH-1:0] imem_data,
+    input wire imem_ready,
+    input wire [1:0] imem_error,
+
+    // data port. a request (mem_read or mem_write) is held until mem_ready, the transfer
+    // completes on the clock edge where request and mem_ready are both high. mem_error is
+    // only looked at when mem_ready is high. requests are not issued while the instruction
+    // itself is not available yet, so a transfer happens exactly once per instruction.
     output wire mem_read, // load in progress
     output wire mem_write, // store in progress (never set for a store that traps)
     output logic [1:0] mem_access_type,
     output wire [DATA_WIDTH-1:0] mem_addr,
     output wire [DATA_WIDTH-1:0] mem_data_out, // data to put in mem
-    input wire [DATA_WIDTH-1:0] mem_data_in // data to take from mem
+    input wire [DATA_WIDTH-1:0] mem_data_in, // data to take from mem
+    input wire mem_ready,
+    input wire [1:0] mem_error
 );
 
   // central
@@ -53,7 +62,6 @@ module control #(
   reg [DATA_WIDTH-1:0] addr;
   reg [DATA_WIDTH-1:0] data_in;
   wire [DATA_WIDTH-1:0] data_out;
-  wire [1:0] fetch_error;
 
   wire [DATA_WIDTH-1:0] rs1_data;
   wire [DATA_WIDTH-1:0] rs2_data;
@@ -79,6 +87,10 @@ module control #(
   reg [3:0] env_cause;
   reg illegal; // the instruction is not a valid RV32I/Zicsr instruction
   wire illegal_store = dec_mem_write && (f3 != S_SW && f3 != S_SH && f3 != S_SB); // reserved store width, must not write
+  wire illegal_load = dec_mem_read && (f3 != I_LW && f3 != I_LH && f3 != I_LB && f3 != I_LBU && f3 != I_LHU); // reserved load width
+  wire data_req = (dec_mem_read && !illegal_load || dec_mem_write && !illegal_store) && imem_ready;
+  // the whole core waits (pc, registers, csrs, memory are not updated) until the instruction and its data are there
+  wire stall = !imem_ready || (data_req && !mem_ready);
   wire csr_to_rd = (opcode == SYSTEM) && (f3 != SYS_ECALL_EBREAK); // csr instructions return the old csr value in rd
 
   logic [DATA_WIDTH-1:0] temp;
@@ -87,13 +99,17 @@ module control #(
   assign data_out = mem_data_in;
   assign mem_addr = addr;
   assign mem_data_out = data_in;
-  assign mem_read = dec_mem_read;
-  assign mem_write = dec_mem_write && !illegal_store;
+  assign mem_read = dec_mem_read && !illegal_load && imem_ready;
+  assign mem_write = dec_mem_write && !illegal_store && imem_ready;
+
+  // the instruction side is a plain port too
+  assign instruction = imem_data;
+  assign imem_addr = pc;
 
   // pc is the only state held here. everything else (regfile, csrfile, memory) holds its own.
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-      pc <= 0;
+      pc <= RESET_VECTOR;
     end else begin
       pc <= next_pc;
     end
@@ -555,9 +571,9 @@ module control #(
     next_pc = inst_next_pc;
 
     // the first match wins, an instruction can only raise one.
-    if (fetch_error != NO_MEM_ERROR) begin
+    if (imem_error != NO_MEM_ERROR) begin
       trap = 1;
-      trap_cause = (fetch_error == OUT_OF_BOUNDS) ? TRAP_INST_ACCESS_FAULT : TRAP_INST_ADDR_MISALIGNED;
+      trap_cause = (imem_error == OUT_OF_BOUNDS) ? TRAP_INST_ACCESS_FAULT : TRAP_INST_ADDR_MISALIGNED;
       trap_value = pc;
     end
     else if (env_trap) begin
@@ -586,6 +602,12 @@ module control #(
 
     if (trap) begin
       next_pc = trap_vector;
+    end
+
+    // nothing about this instruction is final until its fetch and data are in
+    if (stall) begin
+      trap = 0;
+      next_pc = pc;
     end
   end
 
@@ -622,23 +644,6 @@ module control #(
     .csr_addr(csr_addr)
   );
 
-  // instruction cache
-  cache #(
-    .DATA_WIDTH(DATA_WIDTH),
-    .MEM_INIT(IMEM_INIT),
-    .CACHE_SIZE(CACHE_SIZE)
-  ) cache_inst (
-    .clk(clk),
-    .rst_n(rst_n),
-    .addr(pc),
-    .data_in(0), // No write to instruction memory
-    .mem_read('1), // Always read from instruction memory
-    .mem_write('0), // No write to instruction memory
-    .data_out(instruction),
-    .mem_access_type(isa_shared::WORD_MEM_ACCESS),
-    .mem_error(fetch_error)
-  );
-
   // register file
   regfile #(
     .DATA_WIDTH(DATA_WIDTH)
@@ -649,7 +654,7 @@ module control #(
     .rs2(rs2),
     .rs1_data(rs1_data),
     .rs2_data(rs2_data),
-    .reg_write((reg_write || csr_to_rd) && !trap), // a trapping instruction does not retire
+    .reg_write((reg_write || csr_to_rd) && !trap && !stall), // a trapping or waiting instruction does not retire
     .rd(rd),
     .rd_data(rd_data)
   );
@@ -681,12 +686,12 @@ module control #(
     .csr_addr(csr_addr),
     .csr_wdata(csr_wdata),
     .csr_rdata(csr_rdata),
-    .csr_op(csr_op),
+    .csr_op(stall ? CSR_NOP : csr_op),
     .trap(trap),
     .trap_cause(trap_cause),
     .trap_value(trap_value),
     .trap_pc(pc),
-    .mret(mret),
+    .mret(mret && !stall),
     .trap_vector(trap_vector)
   );
 
