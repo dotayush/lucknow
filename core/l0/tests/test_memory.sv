@@ -46,6 +46,23 @@ module test_memory;
     .mem_error(mem_error)
   );
 
+  // a memory that is bigger than its image: the image is loaded, the rest reads as zero
+  memory #(
+    .WORDS(128),
+    .DATA_WIDTH(DATA_WIDTH),
+    .MEM_INIT("./memory/test_rom.hex") // 64 words
+  ) image_dut (
+    .clk(clk),
+    .rst_n(rst_n),
+    .addr(32'h0),
+    .data_in(32'h0),
+    .mem_write(1'b0),
+    .mem_read(1'b0),
+    .mem_access_type(2'b10),
+    .data_out(),
+    .mem_error()
+  );
+
   // clock
   initial begin
     clk = 0;
@@ -174,6 +191,18 @@ module test_memory;
     expect_error(32'h80000000, BYTE_MEM_ACCESS, 0, OUT_OF_BOUNDS);
     read_word(32'h00000000, 32'h55667788, WORD_MEM_ACCESS);
     read_word((WORDS-1)*4, 32'h11223344, WORD_MEM_ACCESS);
+
+    // image: the first word is there, everything after the image is zero (not x)
+    if (image_dut.mem[0] !== 32'h00052283) begin
+      test_failed = 1;
+      $display("[%0t] error: image not loaded, mem[0]=0x%08x", $time, image_dut.mem[0]);
+    end
+    for (int w = 64; w < 128; w = w + 1) begin
+      if (image_dut.mem[w] !== 32'h0) begin
+        test_failed = 1;
+        $display("[%0t] error: image memory word %0d beyond the image expected 0, got 0x%08x", $time, w, image_dut.mem[w]);
+      end
+    end
 
     // no error is flagged when idle
     @(negedge clk);

@@ -32,11 +32,9 @@ module memory #(
   task automatic restore;
     integer i;
     begin
+      for (i = 0; i < WORDS; i = i + 1) mem[i] = '0; // an image can be shorter than the memory
       if (MEM_INIT != "") begin
         $readmemh(MEM_INIT, mem);
-      end
-      else begin
-        for (i = 0; i < WORDS; i = i + 1) mem[i] = '0;
       end
     end
   endtask
