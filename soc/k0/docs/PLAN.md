@@ -4,10 +4,40 @@ Goal: a Linux kernel without an MMU boots on k0 to a shell prompt on the uart, i
 first, then on an FPGA if one is available. "Boots" means: kernel banner on the console,
 timer ticks, a userspace `init` runs and prints, then a small shell takes typed input.
 
-Status when this was written: k0 is RV32IMA + Zicsr, M-mode only, with uart, CLINT, PLIC
-(see `CHIP.md`). It passes riscv-tests ui/mi/um/ua. Nothing below has been tried yet, so
-every kernel-side claim marked **(verify)** is from memory of the kernel sources and must be
-checked against the kernel version chosen in phase 0.
+## Status
+
+Done: Linux 6.12.112 (no MMU, M-mode kernel build) boots on k0 in the Verilator model to a shell
+on the uart and runs commands typed at it. `linux/test.sh` checks that.
+
+| phase | state | notes |
+|---|---|---|
+| 0 toolchain and reference | done, except QEMU | kernel 6.12.112 pinned in `linux/build.sh`. The bare-metal `riscv32-unknown-elf` gcc builds the kernel. No QEMU on this machine, so there was no reference log. The kernel's own `dtc` builds the device tree. `bc` was missing and was built from source |
+| 1 boot interface | done | rom sets `a0`, `a1`. `programs/` has no a0/a1 print test, the kernel finding its device tree is the check |
+| 2 ram and simulator | done | 8 MiB ram, Verilator model (`sim/`), about 1.7 MIPS. No trace diff against another model yet (the `+trace` option exists) |
+| 3 timer, interrupts, console | done | CLINT timer, PLIC and the 8250 driver (as 16450) work. The kernel probes and emulates misaligned accesses (one trap at boot). Overruns happen if a typed byte arrives before the previous one was read: the uart has no fifo |
+| 4 user mode | done | the experiment (MPP stuck at `11`) gave `Oops - environment call from M-mode` at the first syscall of `init`, so user mode was needed. Implemented, see `CHIP.md` |
+| 5 userland | partly | initramfs with a freestanding shell as `/init`. No busybox, no libc, no block device |
+| 6 regression | partly | `linux/test.sh`. Kernel and toolchain versions pinned in the scripts, docs updated. riscv-tests pass (also with wait states, `riscv/run.sh`) |
+
+The rest of this file is the plan as it was written. Items marked **(verify)** were from memory of the kernel
+sources before any of this was tried; the table above and the findings below record what turned out to be true.
+
+Findings that changed the plan:
+- The kernel is built for `rv32ima` without `C`. `zbb`, `zba`, `zicboz` are enabled by default and
+  had to be turned off: the generated code contained `clz`, `cpop`, `rev8` behind runtime patching,
+  which would only run on a core that reports them, but it is cleaner not to have them.
+- NOMMU RISC-V user binaries are bFLT files loaded entirely in ram. A flat file is a 64 byte header plus
+  position independent code, `linux/init/mkflat.py` writes it, no libc or elf2flt was needed for `init`.
+- Linux needs `/dev/console` in the initramfs (`linux/initramfs.list`).
+- `mstatus.MPP` and the user/machine distinction are used by `ret_from_exception` to know whether a trap came
+  from a task. Without U-mode the first `ecall` from `init` fails.
+
+Still open (not needed for the shell, listed in order of usefulness):
+1. busybox and a libc for NOMMU RV32 (uClibc-ng + elf2flt through Buildroot), more than one process, `vfork`.
+2. A FIFO in the uart (a real 16550A), so typing does not depend on the sender's pace.
+3. A reference run on QEMU (`qemu-system-riscv32 -M virt` with the same kernel) to diff traces against.
+4. PMP, so user tasks cannot overwrite the kernel.
+5. Block device or a larger initramfs, FPGA bring-up (clock, memory controller, `timebase-frequency`).
 
 ## Why this is close
 
