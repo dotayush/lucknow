@@ -47,6 +47,7 @@ module test_regfile;
 
   // clock
   initial begin
+    test_failed = 0;
     clk = 0;
     forever begin
       #(CLK_HALF_PERIOD) clk = !clk;

@@ -36,6 +36,7 @@ module test_signext;
   initial begin
     $dumpfile("./tests/results/test_signext.vcd");
     $dumpvars(0, test_signext);
+    test_failed = 0;
 
     sx_op = isa_shared::SX_1100;
     repeat (10) begin
