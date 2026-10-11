@@ -89,6 +89,30 @@ the hardware description does.
 directory) and a `$DISPLAY`. The kernel has no framebuffer driver, so the window is the same serial text
 console the model's uart carries, not graphics.
 
+### Performance counters from the shell
+
+`hpmstat` (in the busybox image, `linux/buildroot/src/hpmstat.c`) reads the core's counters from user
+mode. Alone it prints the totals since reset; with a command it prints what that command cost:
+
+```
+~ # hpmstat ls /
+cycles               2064495
+instructions         2062781
+loads                511208
+stores               618495
+branches taken       111672
+...
+cycles/instruction   1.00
+```
+
+The counts are the core's, not the process's: the kernel's work for the command (`vfork`, loading the flat
+binary, the console driver) and any other process that ran in between are in the numbers. Cycles per
+instruction is 1.00 on the model because its ram answers at once; wait states on the bus show up as
+`fetch wait clocks` and as cycles above instructions. Linux's own `perf` is not available: it needs the
+SBI PMU extension or a supervisor-mode kernel, and this kernel runs in machine mode without firmware.
+Two details worth knowing when adding your own tools: NOMMU binaries need `-fPIC -Wl,-elf2flt="-r -s<stack>"`
+(without `-r` the relocations are dropped and the program faults on its first data access).
+
 ## Trace diff against QEMU
 
 `linux/tracediff.sh` runs the first N instructions on the model and on QEMU (same kernel, same device

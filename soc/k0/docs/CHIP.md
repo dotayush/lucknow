@@ -208,6 +208,32 @@ lowest id on a tie. Only the UART is connected (source 10).
   interrupts are neither lost nor repeated), `uartrx` (typed bytes arrive by PLIC interrupt).
 - Not run: `breakpoint` (debug triggers) and `ma_data` (hardware misaligned access).
 
+## Performance counters (Zihpm)
+
+Besides `cycle`, `time` and `instret`, eight event counters: `mhpmcounter3..10` (64 bit, high halves at
+`mhpmcounter3h..`), each counting the one event named by its `mhpmevent3..10` register. Event 0 counts
+nothing, numbers above 15 read back as 0. `mcountinhibit` stops counters: bit 0 cycle, bit 2 instret,
+bits 3 to 10 the event counters. Counters 11 to 31 are not there (read zero, writes ignored).
+
+| event | counts | | event | counts |
+|---|---|---|---|---|
+| 1 | loads retired | | 9 | clocks waiting for data (bus not ready) |
+| 2 | stores retired | | 10 | multiply and divide retired |
+| 3 | conditional branches taken | | 11 | atomics retired |
+| 4 | conditional branches not taken | | 12 | CSR instructions retired |
+| 5 | jumps retired (`jal`, `jalr`) | | 13 | clocks in user mode |
+| 6 | exceptions taken | | 14 | access faults taken (bus or PMP) |
+| 7 | interrupts taken | | 15 | misaligned access traps |
+| 8 | clocks waiting for the instruction | | | |
+
+- At reset counters 3 to 10 count events 1 to 8 (loads, stores, taken, not taken, jumps, exceptions,
+  interrupts, fetch wait clocks), and `mcounteren` allows user mode to read every counter. Both are
+  conveniences: the Linux M-mode build never writes `mcounteren`, so without them user programs could not
+  read the counters. Reprogram the events with a `csrw` in machine mode.
+- `hpmcounter3..` (0xC03..) are the user mode read-only copies, gated per counter by `mcounteren`.
+- Counts are global: whoever runs between two reads is included, the kernel too.
+- Test: `programs/hpm.S` counts a known workload and checks inhibit, the 64 bit carry and user access.
+
 ## PMP (physical memory protection)
 
 Eight regions, checked on every instruction fetch and data access (`core/pmp.sv`, registers in
