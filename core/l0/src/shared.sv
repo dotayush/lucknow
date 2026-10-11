@@ -100,6 +100,7 @@ package isa_shared;
   typedef enum logic [11:0] {
     SYS_FUN_ECALL = 12'b00000_00_00000, // Environment Call
     SYS_FUN_EBREAK = 12'b00000_00_00001, // Breakpoint
+    SYS_FUN_WFI = 12'h105, // Wait for Interrupt
     SYS_FUN_MRET = 12'b00110_00_00010 // Machine-mode Return from Trap
   } sys_functions_e;
 
@@ -130,13 +131,18 @@ package isa_shared;
     CSR_CLEAR = 2'b11 // Clear bits in CSR
   } csr_ops_e;
 
+  // mcause exception codes, as defined by the privileged spec
   typedef enum logic [3:0] {
-    TRAP_NONE = 4'b0000, // No trap
-    TRAP_ECALL_M = 4'b0011, // Environment call from M-mode
-    TRAP_EBREAK = 4'b0100, // Breakpoint
-    TRAP_ILLEGAL_INSTRUCTION = 4'b0101, // Illegal instruction
-    TRAP_MEMORY_ADDR_MISALIGNED = 4'b0110, // Address misaligned
-    TRAP_MEMORY_ADDR_OOB = 4'b0111 // Address out of bounds
+    TRAP_INST_ADDR_MISALIGNED = 4'd0, // Instruction address misaligned
+    TRAP_INST_ACCESS_FAULT = 4'd1, // Instruction access fault
+    TRAP_ILLEGAL_INSTRUCTION = 4'd2, // Illegal instruction
+    TRAP_EBREAK = 4'd3, // Breakpoint
+    TRAP_LOAD_ADDR_MISALIGNED = 4'd4, // Load address misaligned
+    TRAP_LOAD_ACCESS_FAULT = 4'd5, // Load access fault
+    TRAP_STORE_ADDR_MISALIGNED = 4'd6, // Store address misaligned
+    TRAP_STORE_ACCESS_FAULT = 4'd7, // Store access fault
+    TRAP_ECALL_M = 4'd11, // Environment call from M-mode
+    TRAP_NONE = 4'd15 // No trap (not an exception code, just the idle value)
   } trap_cause_e;
 
   typedef enum logic [1:0] {

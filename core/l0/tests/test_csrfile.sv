@@ -29,8 +29,9 @@ module test_csrfile;
   reg [3:0] trap_cause;
   reg [31:0] trap_value;
   reg [31:0] trap_pc;
-  wire trap_handled;
-  wire [31:0] trap_target_pc;
+  reg mret;
+  reg [31:0] mcycle_before;
+  wire [31:0] trap_vector;
 
   csrfile dut (
     .clk(clk),
@@ -43,8 +44,8 @@ module test_csrfile;
     .trap_cause(trap_cause),
     .trap_value(trap_value),
     .trap_pc(trap_pc),
-    .trap_handled(trap_handled),
-    .trap_target_pc(trap_target_pc)
+    .mret(mret),
+    .trap_vector(trap_vector)
   );
 
   // clock
@@ -57,6 +58,8 @@ module test_csrfile;
     trap_cause = 0;
     trap_value = 0;
     trap_pc = 0;
+    mret = 0;
+    test_failed = 0;
     forever begin
       #(CLK_HALF_PERIOD) clk = !clk;
     end
@@ -151,11 +154,11 @@ module test_csrfile;
     @(negedge clk); // wait for trap to be handled
     trap = 0;
     #1;
-    if (!trap_handled) begin
+    if (trap_vector !== 32'h00000010) begin // mtvec = 0x11, low two bits are masked
       test_failed = 1;
-      $display("[%0t] error: trap not handled", $time);
+      $display("[%0t] error: trap_vector expected=0x%08x, got=0x%08x", $time, 32'h00000010, trap_vector);
     end else begin
-      $display("[%0t] OK: trap handled, target_pc=0x%08x", $time, trap_target_pc);
+      $display("[%0t] OK: trap_vector=0x%08x", $time, trap_vector);
     end
     @(negedge clk);
     csr_addr = CSR_MEPC;
@@ -171,9 +174,9 @@ module test_csrfile;
     csr_addr = CSR_MCAUSE;
     csr_op = CSR_NOP;
     #1;
-    if (csr_rdata !== 32'h00000003) begin
+    if (csr_rdata !== 32'h0000000b) begin
       test_failed = 1;
-      $display("[%0t] error: read CSR_MCAUSE failed: expected=0x%08x, got=0x%08x", $time, 32'h00000003, csr_rdata);
+      $display("[%0t] error: read CSR_MCAUSE failed: expected=0x%08x, got=0x%08x", $time, 32'h0000000b, csr_rdata);
     end else begin
       $display("[%0t] OK: read CSR_MCAUSE data=0x%08x", $time, csr_rdata);
     end
@@ -193,17 +196,70 @@ module test_csrfile;
     #1;
     if (csr_rdata !== 32'h00001800) begin // MPIE = 0 since MIE was 0 before trap
       test_failed = 1;
-      $display("[%0t] error: read CSR_MSTATUS failed: expected=0x%08x, got=0x%08x", $time, 32'h00001880, csr_rdata);
+      $display("[%0t] error: read CSR_MSTATUS failed: expected=0x%08x, got=0x%08x", $time, 32'h00001800, csr_rdata);
     end else begin
       $display("[%0t] OK: read CSR_MSTATUS data=0x%08x", $time, csr_rdata);
     end
+    // trap with MIE = 1 stacks it into MPIE and clears MIE
+    @(negedge clk);
+    csr_addr = CSR_MSTATUS;
+    csr_wdata = 32'h00000008;
+    csr_op = CSR_SET;
+    @(negedge clk);
+    csr_op = CSR_NOP;
+    trap = 1;
+    trap_cause = TRAP_EBREAK;
+    @(negedge clk);
+    trap = 0;
+    #1;
+    if (csr_rdata !== 32'h00001880) begin // MPP = 11, MPIE = 1, MIE = 0
+      test_failed = 1;
+      $display("[%0t] error: mstatus after trap expected=0x%08x, got=0x%08x", $time, 32'h00001880, csr_rdata);
+    end else begin
+      $display("[%0t] OK: trap stacked MIE into MPIE, mstatus=0x%08x", $time, csr_rdata);
+    end
+
+    // mret unstacks it: MIE = MPIE, MPIE = 1
+    @(negedge clk);
+    mret = 1;
+    @(negedge clk);
+    mret = 0;
+    #1;
+    if (csr_rdata !== 32'h00001888) begin
+      test_failed = 1;
+      $display("[%0t] error: mstatus after mret expected=0x%08x, got=0x%08x", $time, 32'h00001888, csr_rdata);
+    end else begin
+      $display("[%0t] OK: mret restored MIE, mstatus=0x%08x", $time, csr_rdata);
+    end
+
+    // mret with MPIE = 0 leaves interrupts disabled
+    @(negedge clk);
+    csr_wdata = 32'h00000088;
+    csr_op = CSR_CLEAR;
+    @(negedge clk);
+    csr_op = CSR_NOP;
+    mret = 1;
+    @(negedge clk);
+    mret = 0;
+    #1;
+    if (csr_rdata !== 32'h00001880) begin // MIE = 0 (copied from MPIE = 0), MPIE = 1
+      test_failed = 1;
+      $display("[%0t] error: mstatus after second mret expected=0x%08x, got=0x%08x", $time, 32'h00001880, csr_rdata);
+    end else begin
+      $display("[%0t] OK: mret with MPIE=0 keeps MIE=0, mstatus=0x%08x", $time, csr_rdata);
+    end
+
+    // mcycle counts every clock
     @(negedge clk);
     csr_addr = CSR_MCYCLE;
     csr_op = CSR_NOP;
     #1;
-    if (csr_rdata !== 32'h0000000f) begin // 15 cycles have passed since reset
+    mcycle_before = csr_rdata;
+    repeat (4) @(negedge clk);
+    #1;
+    if (csr_rdata !== mcycle_before + 4) begin
       test_failed = 1;
-      $display("[%0t] error: read CSR_MCYCLE failed: expected=0x%08x, got=0x%08x", $time, 32'h0000000A, csr_rdata);
+      $display("[%0t] error: read CSR_MCYCLE failed: expected=0x%08x, got=0x%08x", $time, mcycle_before + 4, csr_rdata);
     end else begin
       $display("[%0t] OK: read CSR_MCYCLE data=0x%08x", $time, csr_rdata);
     end

@@ -3,17 +3,22 @@
   import isa_shared::*;
 `endif
 
-module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
+module control #(
+  parameter DATA_WIDTH = 32,
+  parameter WORDS = 64,
+  parameter IMEM_INIT = "./memory/test_rom.hex", // program image loaded into instruction memory
+  parameter DMEM_INIT = "" // optional image preloaded into data memory
+) (
     input wire clk,
     input wire rst_n
 );
 
   // central
   reg [DATA_WIDTH-1:0] pc;
-  reg [DATA_WIDTH-1:0] next_pc;
+  reg [DATA_WIDTH-1:0] next_pc; // combinational, registered into pc at the clock edge
   wire [DATA_WIDTH-1:0] instruction;
 
-  reg [DATA_WIDTH-1:0] alu_a;
+  logic [DATA_WIDTH-1:0] alu_a;
   reg [DATA_WIDTH-1:0] alu_b;
   wire [DATA_WIDTH-1:0] alu_result;
   wire zero;
@@ -38,7 +43,7 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
   reg [DATA_WIDTH-1:0] data_in;
   wire [DATA_WIDTH-1:0] data_out;
   wire [1:0] mem_error;
-  wire [1:0] mem_error2;
+  wire [1:0] fetch_error;
 
   wire [DATA_WIDTH-1:0] rs1_data;
   wire [DATA_WIDTH-1:0] rs2_data;
@@ -57,186 +62,164 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
   reg trap;
   reg [3:0] trap_cause;
   reg [DATA_WIDTH-1:0] trap_value;
-  reg [DATA_WIDTH-1:0] trap_pc;
-  wire trap_handled;
-  wire [DATA_WIDTH-1:0] trap_target_pc;
-  reg manual_pc_set;
+  wire [DATA_WIDTH-1:0] trap_vector;
+  reg mret;
+  reg [DATA_WIDTH-1:0] inst_next_pc; // where the instruction itself sends the pc, before traps
+  reg env_trap; // ecall or ebreak
+  reg [3:0] env_cause;
+  reg illegal; // the instruction is not a valid RV32I/Zicsr instruction
+  wire illegal_store = mem_write && (f3 != S_SW && f3 != S_SH && f3 != S_SB); // reserved store width, must not write
+  wire csr_to_rd = (opcode == SYSTEM) && (f3 != SYS_ECALL_EBREAK); // csr instructions return the old csr value in rd
 
   logic [DATA_WIDTH-1:0] temp;
-  localparam int ADDR_WIDTH = $clog2(WORDS);
 
-  // state machine for control logic
+  // pc is the only state held here. everything else (regfile, csrfile, memory) holds its own.
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       pc <= 0;
-      alu_a <= 0;
-      alu_b <= 0;
-      alu_op <= ALU_NOP;
-      sx_op2 <= SX_NOP;
-      mem_access_type <= WORD_MEM_ACCESS;
-      addr <= 0;
-      data_in <= 0;
-      rd_data <= 0;
-      next_pc <= 4;
-      trap <= 0;
-      trap_cause <= TRAP_NONE;
-      trap_value <= 0;
-      trap_pc <= 0;
-      csr_wdata <= 0;
-      csr_op <= CSR_NOP;
-      temp <= 0;
-      manual_pc_set <= 0;
     end else begin
-        pc = next_pc; // warning: blocking assign, we want pc to update immediately. DO NOT UPDATE PC ANYWHERE ELSE.
-
-        // if next_pc is manually set (by branch, jump, trap), do not increment it by 4.
-        if (!manual_pc_set) begin
-          next_pc <= next_pc + 4; // warning: non-blocking assign, we want next_pc to be updated at the end of the current clock cycle.
-          manual_pc_set <= 0;
-        end
-        // handle traps
-        if (trap_handled) begin
-          next_pc <= trap_target_pc;
-          trap <= 0;
-          trap_cause <= TRAP_NONE;
-          trap_value <= 0;
-          trap_pc <= 0;
-          $display("[%0t] info: trap handled, jumping to trap handler at %h", $time, trap_target_pc);
-        end
-
-        case (mem_error)
-          NO_MEM_ERROR: begin
-            // do nothing
-          end
-          ADDRESS_MISALIGNED: begin
-            manual_pc_set <= 1;
-            trap <= 1;
-            trap_cause <= TRAP_MEMORY_ADDR_MISALIGNED;
-            trap_value <= addr;
-            trap_pc <= pc;
-          end
-          OUT_OF_BOUNDS: begin
-            manual_pc_set <= 1;
-            trap <= 1;
-            trap_cause <= TRAP_MEMORY_ADDR_MISALIGNED;
-            trap_value <= addr;
-            trap_pc <= pc;
-          end
-          default: begin
-          end
-        endcase
+      pc <= next_pc;
     end
   end
 
-  always @* begin
+  // block-local copies of the signals that loop back into the block below (see its end).
+  logic [DATA_WIDTH-1:0] l_alu_a;
+  logic [DATA_WIDTH-1:0] l_alu_b;
+  logic [4:0] l_alu_op;
+  logic [4:0] l_sx_op2;
+  logic [DATA_WIDTH-1:0] l_unextended_data2;
+  logic [DATA_WIDTH-1:0] l_addr;
+  logic [1:0] l_mem_access_type;
+
+  always_comb begin
     /*
     * is_system => reg_write=0, mem_write=0, mem_read = 0, rd_data=0 (branch (not system but doesn't touch anything else), fence, ecall, break)
     * is_store => reg_write=0, mem_write=1, mem_read = 0, rd_data=0
     * is_alu   => reg_write=1, mem_write=0, mem_read = 0, rd_data=alu_result
     * is_load  => reg_write=1, mem_write=0, mem_read = 1, rd_data=data_out
     */
+    l_alu_a = '0;
+    l_alu_b = '0;
+    l_alu_op = ALU_NOP;
+    l_sx_op2 = SX_NOP;
+    l_mem_access_type = WORD_MEM_ACCESS;
+    l_addr = '0;
+    data_in = '0;
+    rd_data = '0;
+    l_unextended_data2 = '0;
+    inst_next_pc = pc + 4;
+    csr_op = CSR_NOP;
+    csr_wdata = '0;
+    mret = 0;
+    illegal = 0;
+    env_trap = 0;
+    env_cause = TRAP_NONE;
+    temp = '0;
+
     if (!reg_write && mem_write && !mem_read) begin
       // STORE operations => data_memory[rs1_data + sign_extend(immediate)] = sign_extended(rs2_data);
-      alu_op = ALU_ADD;
-      alu_a = rs1_data; // rs1 is set by decoder, so rs1_data = register_mem[rs1]
-      alu_b = sign_extended_data;
-      addr = alu_result; // memory_address = alu_a + alu_b
+      l_alu_op = ALU_ADD;
+      l_alu_a = rs1_data; // rs1 is set by decoder, so rs1_data = register_mem[rs1]
+      l_alu_b = sign_extended_data;
+      l_addr = alu_result; // memory_address = l_alu_a + l_alu_b
 
       case (f3)
         S_SW: begin
-          sx_op2 = SX_3100;
-          mem_access_type = WORD_MEM_ACCESS;
+          l_sx_op2 = SX_3100;
+          l_mem_access_type = WORD_MEM_ACCESS;
         end
         S_SH: begin
-          sx_op2 = SX_1500;
-          mem_access_type = HALF_MEM_ACCESS;
+          l_sx_op2 = SX_1500;
+          l_mem_access_type = HALF_MEM_ACCESS;
         end
         S_SB: begin
-          sx_op2 = SX_0700;
-          mem_access_type = BYTE_MEM_ACCESS;
+          l_sx_op2 = SX_0700;
+          l_mem_access_type = BYTE_MEM_ACCESS;
         end
+        default: illegal = 1;
       endcase
 
-      unextended_data2 = rs2_data;
+      l_unextended_data2 = rs2_data;
       data_in = sign_extended_data2; // data to write to memory
     end
     else if (reg_write && !mem_write && !mem_read) begin
       // neither load nor store operations.
       case (opcode)
         JAL: begin
-          alu_op = ALU_ADD;
+          l_alu_op = ALU_ADD;
           rd_data = pc + 4; // JAL writes the next PC value to rd
-          next_pc = pc + sign_extended_data;
-          manual_pc_set = 1;
+          inst_next_pc = pc + sign_extended_data;
         end
         JALR: begin
-          alu_op = ALU_ADD;
-          alu_a = rs1_data;
-          alu_b = sign_extended_data;
+          l_alu_op = ALU_ADD;
+          l_alu_a = rs1_data;
+          l_alu_b = sign_extended_data;
           rd_data = pc + 4;
-          next_pc = alu_result & ~32'd1; // JALR requires the least significant bit to be zero
-          manual_pc_set = 1;
+          inst_next_pc = alu_result & ~32'd1; // JALR requires the least significant bit to be zero
         end
         REGISTER_IMM: begin
           case (f3)
             RI_ADDI: begin
-              alu_a = rs1_data;
-              alu_b = sign_extended_data;
-              alu_op = ALU_ADD;
+              l_alu_a = rs1_data;
+              l_alu_b = sign_extended_data;
+              l_alu_op = ALU_ADD;
               rd_data = alu_result;
             end
             RI_SLTI: begin
-              alu_a = rs1_data;
-              alu_b = sign_extended_data;
-              alu_op = ALU_LT;
+              l_alu_a = rs1_data;
+              l_alu_b = sign_extended_data;
+              l_alu_op = ALU_LT;
               rd_data = alu_result;
             end
             RI_SLTIU: begin
-              alu_a = rs1_data;
-              alu_b = sign_extended_data;
-              alu_op = ALU_LTU;
+              l_alu_a = rs1_data;
+              l_alu_b = sign_extended_data;
+              l_alu_op = ALU_LTU;
               rd_data = alu_result;
             end
             RI_XORI: begin
-              alu_a = rs1_data;
-              alu_b = sign_extended_data;
-              alu_op = ALU_XOR;
+              l_alu_a = rs1_data;
+              l_alu_b = sign_extended_data;
+              l_alu_op = ALU_XOR;
               rd_data = alu_result;
             end
             RI_ORI: begin
-              alu_a = rs1_data;
-              alu_b = sign_extended_data;
-              alu_op = ALU_OR;
+              l_alu_a = rs1_data;
+              l_alu_b = sign_extended_data;
+              l_alu_op = ALU_OR;
               rd_data = alu_result;
             end
             RI_ANDI: begin
-              alu_a = rs1_data;
-              alu_b = sign_extended_data;
-              alu_op = ALU_AND;
+              l_alu_a = rs1_data;
+              l_alu_b = sign_extended_data;
+              l_alu_op = ALU_AND;
               rd_data = alu_result;
             end
             SH_SLLI: begin
-              alu_op = ALU_SLL;
-              alu_a = rs1_data;
-              alu_b = {27'b0, shift_amount}; // zero-extend shift amount to 32 bits
-              rd_data = alu_result;
+              if (f7 == 7'b0000000) begin
+                l_alu_op = ALU_SLL;
+                l_alu_a = rs1_data;
+                l_alu_b = {27'b0, shift_amount}; // zero-extend shift amount to 32 bits
+                rd_data = alu_result;
+              end else begin
+                illegal = 1; // the upper f7 bits are reserved, bit 25 would be shamt[5] which RV32 doesn't have
+              end
             end
             SH_SRLI: begin
               case (f7)
                 SH_SRLI_F7: begin
-                  alu_op = ALU_SRL;
-                  alu_a = rs1_data;
-                  alu_b = {27'b0, shift_amount}; // zero-extend shift amount to 32 bits
+                  l_alu_op = ALU_SRL;
+                  l_alu_a = rs1_data;
+                  l_alu_b = {27'b0, shift_amount}; // zero-extend shift amount to 32 bits
                   rd_data = alu_result;
                 end
                 SH_SRAI_F7: begin
-                  alu_op = ALU_SRA;
-                  alu_a = rs1_data;
-                  alu_b = {27'b0, shift_amount}; // zero-extend shift amount to 32 bits
+                  l_alu_op = ALU_SRA;
+                  l_alu_a = rs1_data;
+                  l_alu_b = {27'b0, shift_amount}; // zero-extend shift amount to 32 bits
                   rd_data = alu_result;
                 end
-                default: begin
-                end
+                default: illegal = 1;
               endcase
             end
           endcase
@@ -244,69 +227,69 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
         REGISTER: begin
           case (f3)
             R_ADDSUB: begin
-              alu_a = rs1_data;
-              alu_b = rs2_data;
+              l_alu_a = rs1_data;
+              l_alu_b = rs2_data;
               case (f7)
                 R_ADD_F7: begin
-                  alu_op = ALU_ADD;
+                  l_alu_op = ALU_ADD;
                   rd_data = alu_result;
                 end
                 R_SUB_F7: begin
-                  alu_op = ALU_SUB;
+                  l_alu_op = ALU_SUB;
                   rd_data = alu_result;
                 end
+                default: illegal = 1;
               endcase
             end
             R_SLL: begin
-              alu_a = rs1_data;
-              alu_b = rs2_data;
-              alu_op = ALU_SLL;
+              l_alu_a = rs1_data;
+              l_alu_b = rs2_data;
+              l_alu_op = ALU_SLL;
               rd_data = alu_result;
             end
             R_SLT: begin
-              alu_a = rs1_data;
-              alu_b = rs2_data;
-              alu_op = ALU_LT;
+              l_alu_a = rs1_data;
+              l_alu_b = rs2_data;
+              l_alu_op = ALU_LT;
               rd_data = alu_result;
             end
             R_SLTU: begin
-              alu_a = rs1_data;
-              alu_b = rs2_data;
-              alu_op = ALU_LTU;
+              l_alu_a = rs1_data;
+              l_alu_b = rs2_data;
+              l_alu_op = ALU_LTU;
               rd_data = alu_result;
             end
             R_XOR: begin
-              alu_a = rs1_data;
-              alu_b = rs2_data;
-              alu_op = ALU_XOR;
+              l_alu_a = rs1_data;
+              l_alu_b = rs2_data;
+              l_alu_op = ALU_XOR;
               rd_data = alu_result;
             end
             R_SRL_SRA: begin
-              alu_a = rs1_data;
-              alu_b = rs2_data;
+              l_alu_a = rs1_data;
+              l_alu_b = rs2_data;
               case (f7)
                 R_SRL_F7: begin
-                  alu_op = ALU_SRL;
+                  l_alu_op = ALU_SRL;
                   rd_data = alu_result;
                 end
                 R_SRA_F7: begin
-                  alu_op = ALU_SRA;
+                  l_alu_op = ALU_SRA;
                   rd_data = alu_result;
                 end
-                default: begin
-                end
+                default: illegal = 1;
               endcase
             end
             R_OR: begin
-              alu_a = rs1_data;
-              alu_b = rs2_data;
-              alu_op = ALU_OR;
+              l_alu_a = rs1_data;
+              l_alu_b = rs2_data;
+              l_alu_op = ALU_OR;
               rd_data = alu_result;
             end
             R_AND: begin
-              alu_a = rs1_data;
-              alu_b = rs2_data;
-              alu_op = ALU_AND;
+              l_alu_a = rs1_data;
+              l_alu_b = rs2_data;
+              l_alu_op = ALU_AND;
               rd_data = alu_result;
             end
           endcase
@@ -317,98 +300,86 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
         AUIPC: begin
           rd_data = pc + sign_extended_data;
         end
-        default: begin
-          if(next_pc[1:0] != 2'b00) begin
-            $display("[%0t] error: next_pc %h is not aligned to 4 bytes", $time, next_pc);
-
-          end
-          rd_data = alu_result;
-        end
+        default: illegal = 1;
       endcase
     end
     else if (reg_write && !mem_write && mem_read) begin
       // LOAD operations => rd_data = data_memory[rs1_data + sign_extended(immediate)];
-      alu_op = ALU_ADD;
-      alu_a = rs1_data; // rs1 is set by decoeder, so rs1_data = register_mem[rs1]
-      alu_b = sign_extended_data; //
-      addr = alu_result; // memory_address = alu_a + alu_b
+      l_alu_op = ALU_ADD;
+      l_alu_a = rs1_data; // rs1 is set by decoeder, so rs1_data = register_mem[rs1]
+      l_alu_b = sign_extended_data; //
+      l_addr = alu_result; // memory_address = l_alu_a + l_alu_b
 
       case (f3)
         I_LW: begin
-          sx_op2 = SX_3100;
-          mem_access_type = WORD_MEM_ACCESS;
+          l_sx_op2 = SX_3100;
+          l_mem_access_type = WORD_MEM_ACCESS;
         end
         I_LH: begin
-          sx_op2 = SX_1500;
-          mem_access_type = HALF_MEM_ACCESS;
+          l_sx_op2 = SX_1500;
+          l_mem_access_type = HALF_MEM_ACCESS;
         end
         I_LB: begin
-          sx_op2 = SX_0700;
-          mem_access_type = BYTE_MEM_ACCESS;
+          l_sx_op2 = SX_0700;
+          l_mem_access_type = BYTE_MEM_ACCESS;
         end
         I_LBU: begin
-          sx_op2 = SXU_0700;
-          mem_access_type = BYTE_MEM_ACCESS;
+          l_sx_op2 = SXU_0700;
+          l_mem_access_type = BYTE_MEM_ACCESS;
         end
         I_LHU: begin
-          sx_op2 = SXU_1500;
-          mem_access_type = HALF_MEM_ACCESS;
+          l_sx_op2 = SXU_1500;
+          l_mem_access_type = HALF_MEM_ACCESS;
         end
-        default: begin
-          sx_op2 = SX_NOP; // no operation
-          mem_access_type = WORD_MEM_ACCESS; // default access type
-          unextended_data2 = '0; // default case, no operation
-        end
+        default: illegal = 1;
       endcase
 
-      unextended_data2 = data_out;
+      l_unextended_data2 = data_out;
       rd_data = sign_extended_data2;
     end
     else if (!reg_write && !mem_write && !mem_read) begin
       case (opcode)
         BRANCH: begin
-          alu_a = rs1_data;
-          alu_b = rs2_data;
-          manual_pc_set = 1;
+          l_alu_a = rs1_data;
+          l_alu_b = rs2_data;
           case (f3)
             B_BEQ: begin
-              alu_op = ALU_EQUALS;
+              l_alu_op = ALU_EQUALS;
               if (alu_result == 1) begin
-                next_pc = pc + sign_extended_data;
+                inst_next_pc = pc + sign_extended_data;
               end
             end
             B_BNE: begin
-              alu_op = ALU_NOT_EQUALS;
+              l_alu_op = ALU_NOT_EQUALS;
               if (alu_result == 1) begin
-                next_pc = pc + sign_extended_data;
+                inst_next_pc = pc + sign_extended_data;
               end
             end
             B_BLT: begin
-              alu_op = ALU_LT;
+              l_alu_op = ALU_LT;
               if (alu_result == 1) begin
-                next_pc = pc + sign_extended_data;
+                inst_next_pc = pc + sign_extended_data;
               end
             end
             B_BGE: begin
-              alu_op = ALU_GE;
+              l_alu_op = ALU_GE;
               if (alu_result == 1) begin
-                next_pc = pc + sign_extended_data;
+                inst_next_pc = pc + sign_extended_data;
               end
             end
             B_BLTU: begin
-              alu_op = ALU_LTU;
+              l_alu_op = ALU_LTU;
               if (alu_result == 1) begin
-                next_pc = pc + sign_extended_data;
+                inst_next_pc = pc + sign_extended_data;
               end
             end
             B_BGEU: begin
-              alu_op = ALU_GEU;
+              l_alu_op = ALU_GEU;
               if (alu_result == 1) begin
-                next_pc = pc + sign_extended_data;
+                inst_next_pc = pc + sign_extended_data;
               end
             end
-            default: begin
-            end
+            default: illegal = 1;
           endcase
         end
         FENCE: begin
@@ -422,24 +393,23 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
         SYSTEM: begin
           case (f3)
             SYS_ECALL_EBREAK: begin
-              manual_pc_set = 1;
               case (unextended_data[11:0])
                 SYS_FUN_ECALL: begin
-                  trap = 1;
-                  trap_cause = TRAP_ECALL_M;
-                  trap_value = 0; // not used for ECALL
-                  trap_pc = pc;
+                  env_trap = 1;
+                  env_cause = TRAP_ECALL_M;
                 end
                 SYS_FUN_EBREAK: begin
-                  trap = 1;
-                  trap_cause = TRAP_EBREAK;
-                  trap_value = 0;
-                  trap_pc = pc;
+                  env_trap = 1;
+                  env_cause = TRAP_EBREAK;
                 end
                 SYS_FUN_MRET: begin
-                  manual_pc_set = 1;
-                  next_pc = csr_rdata; // MEPC
+                  mret = 1;
+                  inst_next_pc = csr_rdata; // MEPC
                 end
+                SYS_FUN_WFI: begin
+                  // no interrupts exist, so waiting for one is a no-op.
+                end
+                default: illegal = 1;
               endcase
             end
             SYS_CSRRW: begin
@@ -496,22 +466,71 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
                 csr_wdata = sign_extended_data;
               end
             end
+            default: illegal = 1;
           endcase
         end
-        default: begin
-        end
+        default: illegal = 1;
       endcase
     end
     else begin // should never occur
-      manual_pc_set = 1;
+      illegal = 1;
+    end
+
+
+    // the operands/selects are published once, at the end. writing a default and then the real
+    // value would glitch alu_op & co, which feed alu_result/data_out back into this block and
+    // never settles in event driven simulators.
+    alu_a = l_alu_a;
+    alu_b = l_alu_b;
+    alu_op = l_alu_op;
+    sx_op2 = l_sx_op2;
+    unextended_data2 = l_unextended_data2;
+    addr = l_addr;
+    mem_access_type = l_mem_access_type;
+  end
+
+  // trap selection and the final next pc. kept apart from the block above because mem_error depends
+  // on the address that block drives.
+  always_comb begin
+    trap = 0;
+    trap_cause = TRAP_NONE;
+    trap_value = '0;
+    next_pc = inst_next_pc;
+
+    // the first match wins, an instruction can only raise one.
+    if (fetch_error != NO_MEM_ERROR) begin
+      trap = 1;
+      trap_cause = (fetch_error == OUT_OF_BOUNDS) ? TRAP_INST_ACCESS_FAULT : TRAP_INST_ADDR_MISALIGNED;
+      trap_value = pc;
+    end
+    else if (env_trap) begin
+      trap = 1;
+      trap_cause = env_cause;
+    end
+    else if (illegal) begin
       trap = 1;
       trap_cause = TRAP_ILLEGAL_INSTRUCTION;
       trap_value = instruction;
-      trap_pc = pc;
-      rd_data = 0;
+    end
+    else if (mem_error != NO_MEM_ERROR) begin
+      trap = 1;
+      trap_value = addr;
+      if (mem_read) begin
+        trap_cause = (mem_error == OUT_OF_BOUNDS) ? TRAP_LOAD_ACCESS_FAULT : TRAP_LOAD_ADDR_MISALIGNED;
+      end else begin
+        trap_cause = (mem_error == OUT_OF_BOUNDS) ? TRAP_STORE_ACCESS_FAULT : TRAP_STORE_ADDR_MISALIGNED;
+      end
+    end
+    else if (inst_next_pc[1:0] != 2'b00) begin // jump, taken branch or mret to a target that isn't 4 byte aligned
+      trap = 1;
+      trap_cause = TRAP_INST_ADDR_MISALIGNED;
+      trap_value = inst_next_pc;
+    end
+
+    if (trap) begin
+      next_pc = trap_vector;
     end
   end
-
 
   // alu
   alu #(
@@ -549,13 +568,15 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
   // data memory (ram)
   memory #(
     .DATA_WIDTH(DATA_WIDTH),
+    .MEM_INIT(DMEM_INIT),
     .WORDS(WORDS)
   ) data_memory_inst (
     .clk(clk),
+    .rst_n(rst_n),
     .addr(addr),
     .data_in(data_in),
     .mem_read(mem_read),
-    .mem_write(mem_write),
+    .mem_write(mem_write && !illegal_store),
     .data_out(data_out),
     .mem_access_type(mem_access_type), // Use the access type from decoder
     .mem_error(mem_error)
@@ -564,17 +585,18 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
   // instruction memory (rom)
   memory #(
     .DATA_WIDTH(DATA_WIDTH),
-    .MEM_INIT("./memory/test_rom.hex"),
+    .MEM_INIT(IMEM_INIT),
     .WORDS(WORDS)
   ) instruction_memory_inst (
     .clk(clk),
+    .rst_n(rst_n),
     .addr(pc),
     .data_in(0), // No write to instruction memory
     .mem_read('1), // Always read from instruction memory
     .mem_write('0), // No write to instruction memory
     .data_out(instruction),
     .mem_access_type(isa_shared::WORD_MEM_ACCESS),
-    .mem_error(mem_error2)
+    .mem_error(fetch_error)
   );
 
   // register file
@@ -587,7 +609,7 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
     .rs2(rs2),
     .rs1_data(rs1_data),
     .rs2_data(rs2_data),
-    .reg_write(reg_write),
+    .reg_write((reg_write || csr_to_rd) && !trap), // a trapping instruction does not retire
     .rd(rd),
     .rd_data(rd_data)
   );
@@ -623,9 +645,9 @@ module control #(parameter DATA_WIDTH = 32, WORDS = 64) (
     .trap(trap),
     .trap_cause(trap_cause),
     .trap_value(trap_value),
-    .trap_pc(trap_pc),
-    .trap_handled(trap_handled),
-    .trap_target_pc(trap_target_pc)
+    .trap_pc(pc),
+    .mret(mret),
+    .trap_vector(trap_vector)
   );
 
 endmodule
