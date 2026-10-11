@@ -30,6 +30,9 @@ printf 'name: K0\ndesc: k0 userland\n' > $ext/external.desc
 rm -f $ext/overlay
 ln -s $HERE/overlay $ext/overlay
 cp $HERE/k0_defconfig $ext/k0_defconfig
+rm -f $ext/post-build.sh $ext/src
+ln -s $HERE/post-build.sh $ext/post-build.sh
+ln -s $HERE/src $ext/src
 make -C $BR O=$BRO BR2_EXTERNAL=$ext BR2_DEFCONFIG=$ext/k0_defconfig defconfig
 make -C $BR O=$BRO BR2_EXTERNAL=$ext -j$(nproc)
 cp $BRO/images/rootfs.cpio $OUT/rootfs.cpio
