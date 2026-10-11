@@ -108,7 +108,7 @@ module decoder #(parameter DATA_WIDTH = 32) (
       end
       LUI, AUIPC: begin
         rd = instruction[11:7];
-        sx_op = SX_1900;
+        sx_op = SX_3100; // already a full 32 bit value, nothing to extend
         unextended_data = instruction[31:12] << 12;
         reg_write = 1;
       end
@@ -131,6 +131,8 @@ module decoder #(parameter DATA_WIDTH = 32) (
             case (instruction[31:20])
                 SYS_FUN_MRET: begin
                   csr_addr = CSR_MEPC;
+                end
+                default: begin
                 end
             endcase
           end

@@ -20,8 +20,7 @@ module test_decoder;
   reg [DATA_WIDTH-1:0] instruction;
   wire [2:0] f3;
   wire [6:0] f7;
-  wire [4:0] alu_op;
-  wire [2:0] sx_op;
+  wire [4:0] sx_op;
   wire [6:0] opcode;
   wire mem_write;
   wire reg_write;
@@ -30,6 +29,8 @@ module test_decoder;
   wire [$clog2(DATA_WIDTH)-1:0] rs2;
   wire [$clog2(DATA_WIDTH)-1:0] rd;
   wire [DATA_WIDTH-1:0] unextended_data;
+  wire [4:0] shift_amount;
+  wire [11:0] csr_addr;
 
   // dut instantiation
   decoder #(
@@ -38,7 +39,6 @@ module test_decoder;
     .instruction(instruction),
     .f3(f3),
     .f7(f7),
-    .alu_op(alu_op),
     .sx_op(sx_op),
     .opcode(opcode),
     .mem_write(mem_write),
@@ -47,167 +47,83 @@ module test_decoder;
     .rs1(rs1),
     .rs2(rs2),
     .rd(rd),
-    .unextended_data(unextended_data)
+    .unextended_data(unextended_data),
+    .shift_amount(shift_amount),
+    .csr_addr(csr_addr)
   );
+
+  // drive `inst` and compare every decoder output against the expected one
+  task check(
+    input string name,
+    input [31:0] inst,
+    input [6:0] e_opcode,
+    input e_mem_write, input e_reg_write, input e_mem_read,
+    input [4:0] e_rs1, input [4:0] e_rs2, input [4:0] e_rd,
+    input [2:0] e_f3, input [6:0] e_f7,
+    input [4:0] e_sx_op, input [31:0] e_unextended,
+    input [11:0] e_csr_addr, input [4:0] e_shift_amount
+  );
+    begin
+      instruction = inst;
+      #1;
+      if (opcode !== e_opcode || mem_write !== e_mem_write || reg_write !== e_reg_write || mem_read !== e_mem_read ||
+          rs1 !== e_rs1 || rs2 !== e_rs2 || rd !== e_rd || f3 !== e_f3 || f7 !== e_f7 || sx_op !== e_sx_op ||
+          unextended_data !== e_unextended || csr_addr !== e_csr_addr || shift_amount !== e_shift_amount) begin
+        test_failed = 1;
+        $display("[%0t] error: %s (%08x)", $time, name, inst);
+        $display("    opcode=%b/%b mem_write=%b/%b reg_write=%b/%b mem_read=%b/%b rs1=%0d/%0d rs2=%0d/%0d rd=%0d/%0d",
+                 opcode, e_opcode, mem_write, e_mem_write, reg_write, e_reg_write, mem_read, e_mem_read, rs1, e_rs1, rs2, e_rs2, rd, e_rd);
+        $display("    f3=%b/%b f7=%b/%b sx_op=%b/%b unextended=%08x/%08x csr_addr=%03x/%03x shift_amount=%0d/%0d   (got/expected)",
+                 f3, e_f3, f7, e_f7, sx_op, e_sx_op, unextended_data, e_unextended, csr_addr, e_csr_addr, shift_amount, e_shift_amount);
+      end else begin
+        $display("[%0t] OK: %s", $time, name);
+      end
+    end
+  endtask
+
+  localparam [6:0] OP_LOAD = 7'b0000011, OP_STORE = 7'b0100011, OP_BRANCH = 7'b1100011, OP_JAL = 7'b1101111,
+                   OP_JALR = 7'b1100111, OP_IMM = 7'b0010011, OP_REG = 7'b0110011, OP_LUI = 7'b0110111,
+                   OP_AUIPC = 7'b0010111, OP_FENCE = 7'b0001111, OP_SYSTEM = 7'b1110011;
 
   initial begin
     $dumpfile("./tests/results/test_decoder.vcd");
     $dumpvars(0, test_decoder);
+    test_failed = 0;
 
-    // case 1: line: lw   x5,   2(x10) | hex: 00252283 | bin: 00000000001001010010001010000011
-    instruction = 32'b00000000001001010010001010000011; // lw x5, 2(x10)
-    #1; // wait for dut to process
-    if (alu_op !== 3'b000 || sx_op !== 3'b000 || opcode !==7'b0000011 || mem_write !== 0 || reg_write !== 1 || mem_read !==1 || rs1 !== 5'b01010 || rs2 !== 5'b0 || rd !== 5'b00101) begin
-      test_failed = 1;
-      $display("[%0t] error: expected alu_op=000 (got %b), opcode=0000011 (got %b), sx_op2=001 (got %b), mem_write=0 (got %b), reg_write=1 (got %b), mem_read=1 (got %b), rs1=01010 (got %b), rs2=0 (got %b), rd=00101 (got %b)",
-               $time, alu_op, sx_op, opcode, mem_write, reg_write, mem_read, rs1, rs2, rd);
-    end else begin
-      $display("[%0t] OK: memory load instruction decoded correctly", $time);
-    end
+    //     name                inst        opcode     mw rw mr rs1 rs2 rd  f3     f7         sx_op  unextended  csr   shamt
+    check("lw x4, 0(x0)",      32'h00002203, OP_LOAD,   0, 1, 1, 0,  0,  4,  3'b010, 7'b0,      isa_shared::SX_1100, 32'h0,        12'h0,   5'd0);
+    check("lbu x11, 3(x1)",    32'h0030c583, OP_LOAD,   0, 1, 1, 1,  0,  11, 3'b100, 7'b0,      isa_shared::SX_1100, 32'h3,        12'h0,   5'd0);
+    check("lb x3, -9(x14)",    32'hff770183, OP_LOAD,   0, 1, 1, 14, 0,  3,  3'b000, 7'b0,      isa_shared::SX_1100, 32'hff7,      12'h0,   5'd0);
+    check("sw x3, 0(x0)",      32'h00302023, OP_STORE,  1, 0, 0, 0,  3,  0,  3'b010, 7'b0,      isa_shared::SX_1100, 32'h0,        12'h0,   5'd0);
+    check("sh x2, 6(x1)",      32'h00209323, OP_STORE,  1, 0, 0, 1,  2,  0,  3'b001, 7'b0,      isa_shared::SX_1100, 32'h6,        12'h0,   5'd0);
+    check("sh x10, -30(x15)",  32'hfea79123, OP_STORE,  1, 0, 0, 15, 10, 0,  3'b001, 7'b0,      isa_shared::SX_1100, 32'hfe2,      12'h0,   5'd0);
+    check("beq x3, x4, 8",     32'h00418463, OP_BRANCH, 0, 0, 0, 3,  4,  0,  3'b000, 7'b0,      isa_shared::SX_1200, 32'h8,        12'h0,   5'd0);
+    check("bne x12, x7, -4",   32'hfe761ee3, OP_BRANCH, 0, 0, 0, 12, 7,  0,  3'b001, 7'b0,      isa_shared::SX_1200, 32'h1ffc,     12'h0,   5'd0);
+    check("jal x1, 2",         32'h002000ef, OP_JAL,    0, 1, 0, 0,  0,  1,  3'b000, 7'b0,      isa_shared::SX_2000, 32'h2,        12'h0,   5'd0);
+    check("jalr x3, 1(x9)",    32'h001481e7, OP_JALR,   0, 1, 0, 9,  0,  3,  3'b000, 7'b0,      isa_shared::SX_1100, 32'h1,        12'h0,   5'd0);
+    check("addi x1, x0, 5",    32'h00500093, OP_IMM,    0, 1, 0, 0,  0,  1,  3'b000, 7'b0,      isa_shared::SX_1100, 32'h5,        12'h0,   5'd0);
+    check("sltiu x13, x1, -1", 32'hfff0b693, OP_IMM,    0, 1, 0, 1,  0,  13, 3'b011, 7'b0,      isa_shared::SX_1100, 32'hfff,      12'h0,   5'd0);
+    check("slli x9, x1, 3",    32'h00309493, OP_IMM,    0, 1, 0, 1,  0,  9,  3'b001, 7'b0,      isa_shared::SX_NOP,  32'h0,        12'h0,   5'd3);
+    check("srai x10, x1, 3",   32'h4030d513, OP_IMM,    0, 1, 0, 1,  0,  10, 3'b101, 7'b0100000, isa_shared::SX_NOP, 32'h0,        12'h0,   5'd3);
+    check("add x3, x1, x2",    32'h002081b3, OP_REG,    0, 1, 0, 1,  2,  3,  3'b000, 7'b0,      isa_shared::SX_NOP,  32'h0,        12'h0,   5'd0);
+    check("sub x3, x1, x2",    32'h402081b3, OP_REG,    0, 1, 0, 1,  2,  3,  3'b000, 7'b0100000, isa_shared::SX_NOP, 32'h0,        12'h0,   5'd0);
+    // the whole 32 bit value is forwarded, the upper 20 bits must survive.
+    check("lui x7, 0xabcde",   32'habcde3b7, OP_LUI,    0, 1, 0, 0,  0,  7,  3'b000, 7'b0,      isa_shared::SX_3100, 32'habcde000, 12'h0,   5'd0);
+    check("auipc x12,0x12345", 32'h12345617, OP_AUIPC,  0, 1, 0, 0,  0,  12, 3'b000, 7'b0,      isa_shared::SX_3100, 32'h12345000, 12'h0,   5'd0);
+    check("fence",             32'h0ff0000f, OP_FENCE,  0, 0, 0, 0,  0,  0,  3'b000, 7'b0,      isa_shared::SX_NOP,  32'h0,        12'h0,   5'd0);
+    // csr instructions leave reg_write to the control (the csr value goes to rd)
+    check("csrrw x8,mtvec,x1", 32'h30509473, OP_SYSTEM, 0, 0, 0, 1,  0,  8,  3'b001, 7'b0,      isa_shared::SX_NOP,  32'h0,        12'h305, 5'd0);
+    check("csrrsi x14,mstatus,8", 32'h30046773, OP_SYSTEM, 0, 0, 0, 0, 0, 14, 3'b110, 7'b0,     isa_shared::SXU_0400, 32'h8,       12'h300, 5'd0);
+    check("ecall",             32'h00000073, OP_SYSTEM, 0, 0, 0, 0,  0,  0,  3'b000, 7'b0,      isa_shared::SX_NOP,  32'h0,        12'h0,   5'd0);
+    check("ebreak",            32'h00100073, OP_SYSTEM, 0, 0, 0, 0,  0,  0,  3'b000, 7'b0,      isa_shared::SX_NOP,  32'h1,        12'h0,   5'd0);
+    // mret reads mepc
+    check("mret",              32'h30200073, OP_SYSTEM, 0, 0, 0, 0,  0,  0,  3'b000, 7'b0,      isa_shared::SX_NOP,  32'h302,      isa_shared::CSR_MEPC, 5'd0);
 
-    // case 2: line: lh   x12,  3(x7) | hex: 00339603 | bin: 00000000001100111001011000000011
-    instruction = 32'b00000000001100111001011000000011; // lh x12, 3(x7)
-    #1; // wait for dut to process
-    if (alu_op !== 3'b000 || sx_op !== 3'b000 || opcode !==7'b0000011 || mem_write !== 0 || reg_write !== 1 || mem_read !==1 || rs1 !== 5'b00111 || rs2 !== 5'b0 || rd !== 5'b01100) begin
-      test_failed = 1;
-      $display("[%0t] error: expected alu_op=000 (got %b), sx_op=000 (got &b), opcode=0000011 (got %b), mem_write=0 (got %b), reg_write=1 (got %b), mem_read=1 (got %b), rs1=00111 (got %b), rs2=0 (got %b), rd=01100 (got %b)",
-               $time, alu_op, sx_op, opcode, mem_write, reg_write, mem_read, rs1, rs2, rd);
-    end else begin
-      $display("[%0t] OK: memory load halfword instruction decoded correctly", $time);
-    end
-
-    // line: lb   x3,   -9(x14) | hex: ff770183 | bin: 11111111011101110000000110000011
-    instruction = 32'b11111111011101110000000110000011; // lb x3, -9(x14)
-    #1; // wait for dut to process
-    if (alu_op !== 3'b000 || sx_op !== 3'b000 || opcode !==7'b0000011 || mem_write !== 0 || reg_write !== 1 || mem_read !==1 || rs1 !== 5'b01110 || rs2 !== 5'b0 || rd !== 5'b00011) begin
-      test_failed = 1;
-      $display("[%0t] error: expected alu_op=000 (got %b), sx_op=000 (got %b), opcode=0000011 (got %b), mem_write=0 (got %b), reg_write=1 (got %b), mem_read=1 (got %b), rs1=01110 (got %b), rs2=0 (got %b), rd=00011 (got %b)",
-               $time, alu_op, sx_op, opcode, mem_write, reg_write, mem_read, rs1, rs2, rd);
-    end else begin
-      $display("[%0t] OK: memory load byte instruction decoded correctly", $time);
-    end
-
-    // line: lbu  x9,   12(x2) | hex: 00c14483 | bin: 00000000110000010100010010000011
-    instruction = 32'b00000000110000010100010010000011; // lbu x9, 12(x2)
-    #1; // wait for dut to process
-    if (alu_op !== 3'b000 || sx_op !== 3'b000 || opcode !==7'b0000011 || mem_write !== 0 || reg_write !== 1 || mem_read !==1 || rs1 !== 5'b00010 || rs2 !== 5'b0 || rd !== 5'b01001) begin
-      test_failed = 1;
-      $display("[%0t] error: expected alu_op=000 (got %b), sx_op=000 (got %b), opcode=0000011 (got %b), mem_write=0 (got %b), reg_write=1 (got %b), mem_read=1 (got %b), rs1=00010 (got %b), rs2=0 (got %b), rd=01001 (got %b)",
-               $time, alu_op, sx_op, opcode, mem_write, reg_write, mem_read, rs1, rs2, rd);
-    end else begin
-      $display("[%0t] OK: memory load byte unsigned instruction decoded correctly", $time);
-    end
-
-    // line: lhu  x17,  21(x6) | hex: 01535883 | bin: 00000001010100110101100010000011
-    instruction = 32'b00000001010100110101100010000011; // lhu x17, 21(x6)
-    #1; // wait for dut to process
-    if (alu_op !== 3'b000 || sx_op !== 3'b000 || opcode !==7'b0000011 || mem_write !== 0 || reg_write !== 1 || mem_read !==1 || rs1 !== 5'b00110 || rs2 !== 5'b0 || rd !== 5'b10001) begin
-      test_failed = 1;
-      $display("[%0t] error: expected alu_op=000 (got %b), sx_op=000 (got %b), opcode=0000011 (got %b), mem_write=0 (got %b), reg_write=1 (got %b), mem_read=1 (got %b), rs1=00110 (got %b), rs2=0 (got %b), rd=10001 (got %b)",
-               $time, alu_op, sx_op, opcode, mem_write, reg_write, mem_read, rs1, rs2, rd);
-    end else begin
-      $display("[%0t] OK: memory load halfword unsigned instruction decoded correctly", $time);
-    end
-
-    // line: sw   x16,  12(x8) | hex: 01042623 | bin: 00000001000001000010011000100011
-    instruction = 32'b00000001000001000010011000100011; // sw x16, 12(x8)
-    #1; // wait for dut to process
-    if (alu_op !== 3'b000 || sx_op !== 3'b000 || opcode !==7'b0100011 || mem_write !== 1 || reg_write !== 0 || mem_read !==0 || rs1 !== 5'b01000 || rs2 !== 5'b10000 || rd !== 5'b0) begin
-      test_failed = 1;
-      $display("[%0t] error: expected alu_op=000 (got %b), sx_op=000 (got %b), opcode=0100011 (got %b), mem_write=1 (got %b), reg_write=0 (got %b), mem_read=0 (got %b), rs1=01000 (got %b), rs2=10000 (got %b), rd=0 (got %b)",
-               $time, alu_op, sx_op, opcode, mem_write, reg_write, mem_read, rs1, rs2, rd);
-    end else begin
-      $display("[%0t] OK: memory store instruction decoded correctly", $time);
-    end
-
-    // line: sh   x10,  -30(x15) | hex: fea79123 | bin: 11111110101001111001000100100011
-    instruction = 32'b11111110101001111001000100100011; // sh x10, -30(x15)
-    #1; // wait for dut to process
-    if (alu_op !== 3'b000 || sx_op !== 3'b000 || opcode !==7'b0100011 || mem_write !== 1 || reg_write !== 0 || mem_read !==0 || rs1 !== 5'b01111 || rs2 !== 5'b01010 || rd !== 5'b0) begin
-      test_failed = 1;
-      $display("[%0t] error: expected alu_op=000 (got %b), sx_op=000 (got %b), opcode=0100011 (got %b), mem_write=1 (got %b), reg_write=0 (got %b), mem_read=0 (got %b), rs1=01111 (got %b), rs2=01010 (got %b), rd=0 (got %b)",
-               $time, alu_op, sx_op, opcode, mem_write, reg_write, mem_read, rs1, rs2, rd);
-    end else begin
-      $display("[%0t] OK: memory store halfword instruction decoded correctly", $time);
-    end
-
-    // line: sb   x22,  50(x17) | hex: 03688923 | bin: 00000011011010001000100100100011
-    instruction = 32'b00000011011010001000100100100011; // sb x22, 50(x17)
-    #1; // wait for dut to process
-    if (alu_op !== 3'b000 || sx_op !== 3'b000 || opcode !==7'b0100011 || mem_write !== 1 || reg_write !== 0 || mem_read !==0 || rs1 !== 5'b10001 || rs2 !== 5'b10110 || rd !== 5'b0) begin
-      test_failed = 1;
-      $display("[%0t] error: expected alu_op=000 (got %b), sx_op=000 (got %b), opcode=0100011 (got %b), mem_write=1 (got %b), reg_write=0 (got %b), mem_read=0 (got %b), rs1=10001 (got %b), rs2=10110 (got %b), rd=0 (got %b)",
-               $time, alu_op, sx_op, opcode, mem_write, reg_write, mem_read, rs1, rs2, rd);
-    end else begin
-      $display("[%0t] OK: memory store byte instruction decoded correctly", $time);
-    end
-
-    // line: jal  x1,   2 | hex: 002000ef | bin: 00000000001000000000000011101111
-    instruction = 32'b00000000001000000000000011101111; // jal x1, 2
-    #1; // wait for dut to process
-    if (alu_op !== 3'b000 || sx_op !== 3'b110 || opcode !==7'b1101111 || mem_write !== 0 || reg_write !== 1 || mem_read !==0 || rs1 !== 5'd0 || rs2 !== 5'd0 || rd !== 5'b00001) begin
-      test_failed = 1;
-      $display("[%0t] error: expected alu_op=000 (got %b), sx_op=110 (got %b), opcode=1101111 (got %b), mem_write=0 (got %b), reg_write=1 (got %b), mem_read=0 (got %b), rs1=0 (got %d), rs2=0 (got %d), rd=00001 (got %b)",
-               $time, alu_op, sx_op, opcode, mem_write, reg_write, mem_read, rs1, rs2, rd);
-    end else begin
-      $display("[%0t] OK: jump and link instruction decoded correctly", $time);
-    end
-
-    // line: jalr x3,   1(x9) | hex: 001481e7 | bin: 00000000000101001000000111100111
-    instruction = 32'b00000000000101001000000111100111; // jalr x3, 1(x9)
-    #1; // wait for dut to process
-    if (alu_op !== 3'b000 || sx_op !== 3'b000 || opcode !==7'b1100111 || mem_write !== 0 || reg_write !== 1 || mem_read !==0 || rs1 !== 5'b01001 || rs2 !== 5'b0 || rd !== 5'b00011) begin
-      test_failed = 1;
-      $display("[%0t] error: expected alu_op=000 (got %b), sx_op=000 (got %b), opcode=1100111 (got %b), mem_write=0 (got %b), reg_write=1 (got %b), mem_read=0 (got %b), rs1=01001 (got %b), rs2=0 (got %b), rd=00011 (got %b)",
-               $time, alu_op, sx_op, opcode, mem_write, reg_write, mem_read, rs1, rs2, rd);
-    end else begin
-      $display("[%0t] OK: jump and link register instruction decoded correctly", $time);
-    end
-
-    // line: beq  x5,   x10,  8 | hex: 00a28463 | bin: 00000000101000101000010001100011
-    instruction = 32'b00000000101000101000010001100011; // beq x5, x10, 8
-    #1; // wait for dut to process
-    if (alu_op !== 3'b001 || sx_op !== 3'b000 || opcode !==7'b1100011 || mem_write !== 0 || reg_write !== 0 || mem_read !==0 || rs1 !== 5'b00101 || rs2 !== 5'b01010 || rd !== 5'b0) begin
-      test_failed = 1;
-      $display("[%0t] error: expected alu_op=001 (got %b), sx_op=000 (got %b), opcode=1100011 (got %b), mem_write=0 (got %b), reg_write=0 (got %b), mem_read=0 (got %b), rs1=00101 (got %b), rs2=01010 (got %b), rd=0 (got %b)",
-               $time, alu_op, sx_op, opcode, mem_write, reg_write, mem_read, rs1, rs2, rd);
-    end else begin
-      $display("[%0t] OK: branch equal instruction decoded correctly", $time);
-    end
-
-    // line: bne  x12,  x7,   -4 | hex: fe761ee3 | bin: 11111110011101100001111011100011
-    instruction = 32'b11111110011101100001111011100011; // bne x12, x7, -4
-    #1; // wait for dut to process
-    if (alu_op !== 3'b001 || sx_op !== 3'b000 || opcode !==7'b1100011 || mem_write !== 0 || reg_write !== 0 || mem_read !==0 || rs1 !== 5'b01100 || rs2 !== 5'b00111 || rd !== 5'b0) begin
-      test_failed = 1;
-      $display("[%0t] error: expected alu_op=001 (got %b), sx_op=000 (got %b), opcode=1100011 (got %b), mem_write=0 (got %b), reg_write=0 (got %b), mem_read=0 (got %b), rs1=01100 (got %b), rs2=00111 (got %b), rd=0 (got %b)",
-               $time, alu_op, sx_op, opcode, mem_write, reg_write, mem_read, rs1, rs2, rd);
-    end else begin
-      $display("[%0t] OK: branch not equal instruction decoded correctly", $time);
-    end
-
-    // unrecognized instructions
-    instruction = 32'b111111111111_11111_111_11111_1111111; // Invalid instruction
-    #1; // wait for dut to process
-    if (alu_op !== 3'b111 || sx_op !== 3'b111 || opcode !==7'b1111111 || mem_write !== 0 || reg_write !== 0 || mem_read !==0 || rs1 !== 5'd0 || rs2 !== 5'd0 || rd !== 5'd0) begin
-      test_failed = 1;
-      $display("[%0t] error: expected alu_op=111 (got %b), opcode=1111111 (got %b), sx_op2=001 (got %b), mem_write=0 (got %b), reg_write=0 (got %b), mem_read=0 (got %b), rs1=0 (got %d), rs2=0 (got %d), rd=0 (got %d)",
-               $time, alu_op, sx_op, opcode, mem_write, reg_write, mem_read, rs1, rs2, rd);
-    end else begin
-      $display("[%0t] OK: invalid instruction handled correctly", $time);
-    end
-    instruction = 32'b000000000000_00000_000_00000_0000000; // 0 instruction
-    #1; // wait for dut to process
-    if (alu_op !== 3'b111 || sx_op !== 3'b111 || opcode !==7'b0000000 || mem_write !== 0 || reg_write !== 0 || mem_read !==0 || rs1 !== 5'd0 || rs2 !== 5'd0 || rd !== 5'd0) begin
-      test_failed = 1;
-      $display("[%0t] error: expected alu_op=111 (got %b), sx_op=111 (got %b), opcode=0000000 (got %b), mem_write=0 (got %b), reg_write=0 (got %b), mem_read=0 (got %b), rs1=0 (got %d), rs2=0 (got %d), rd=0 (got %d)",
-               $time, alu_op, sx_op, opcode, mem_write, reg_write, mem_read, rs1, rs2, rd);
-    end else begin
-      $display("[%0t] OK: zero instruction handled correctly", $time);
-    end
+    // unknown encodings decode to "does nothing"
+    check("unknown opcode",    32'hFFFFFFFF, 7'b1111111, 0, 0, 0, 0, 0,  0,  3'b000, 7'b0,      isa_shared::SX_NOP,  32'h0,        12'h0,   5'd0);
+    check("all zero",          32'h00000000, 7'b0000000, 0, 0, 0, 0, 0,  0,  3'b000, 7'b0,      isa_shared::SX_NOP,  32'h0,        12'h0,   5'd0);
 
     finish;
   end
-
 
 endmodule
