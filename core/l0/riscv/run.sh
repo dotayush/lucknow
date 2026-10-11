@@ -7,6 +7,7 @@
 # script, see soc/k0/riscv/run.sh. knobs (environment):
 #   RV_MARCH     -march for the tests, default rv32i_zicsr
 #   RV_UM=1      also run rv32um
+#   RV_UA=1      also run rv32ua
 #   RV_BASE      address the image is linked at (ram base), default 0
 #   RV_UI_SKIP   rv32ui tests not to run
 #   RV_IFLAGS    extra iverilog flags, for example -Ptest_riscv.DATA_WAIT=3
@@ -16,6 +17,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 CORE=$(cd "${CORE:-$HERE/..}" && pwd)
 RV_MARCH=${RV_MARCH:-rv32i_zicsr}
 RV_UM=${RV_UM:-0}
+RV_UA=${RV_UA:-0}
 RV_BASE=${RV_BASE:-0}
 RV_IFLAGS=${RV_IFLAGS:-}
 cd "$CORE" || exit 1
@@ -36,6 +38,8 @@ UI_SKIP=${RV_UI_SKIP:-"fence_i ma_data"}
 MI_TESTS="csr mcsr scall sbreak shamt ma_addr ma_fetch lh-misaligned lw-misaligned sh-misaligned sw-misaligned zicntr pmpaddr"
 # rv32um-p-*: everything, when the core has the m extension
 UM_TESTS="mul mulh mulhsu mulhu div divu rem remu"
+# rv32ua-p-*: the word atomics, when the core has the a extension
+UA_TESTS="lrsc amoswap_w amoadd_w amoxor_w amoand_w amoor_w amomin_w amomax_w amominu_w amomaxu_w"
 
 if [ ! -d $SRC ]; then
   git clone -q --recurse-submodules https://github.com/riscv-software-src/riscv-tests $SRC || exit 1
@@ -50,6 +54,7 @@ if [ $# -gt 0 ]; then
   for t in "$@"; do
     if [ -f $SRC/isa/rv32ui/$t.S ]; then tests+=("rv32ui/$t")
     elif [ -f $SRC/isa/rv32mi/$t.S ]; then tests+=("rv32mi/$t")
+    elif [ -f $SRC/isa/rv32ua/$t.S ]; then tests+=("rv32ua/$t")
     else tests+=("rv32um/$t"); fi
   done
 else
@@ -60,6 +65,7 @@ else
   done
   for t in $MI_TESTS; do tests+=("rv32mi/$t"); done
   if [ "$RV_UM" = 1 ]; then for t in $UM_TESTS; do tests+=("rv32um/$t"); done; fi
+  if [ "$RV_UA" = 1 ]; then for t in $UA_TESTS; do tests+=("rv32ua/$t"); done; fi
 fi
 
 pass=0; fail=0; failed=()
