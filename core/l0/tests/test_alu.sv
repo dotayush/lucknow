@@ -44,10 +44,26 @@ module test_alu;
     .overflow(overflow)
   );
 
+
+  // result must equal expected for the given operation and operands
+  task check_op(input alu_ops_e op, input [DATA_WIDTH-1:0] sa, input [DATA_WIDTH-1:0] sb, input [DATA_WIDTH-1:0] expected);
+    begin
+      alu_op = op;
+      a = sa;
+      b = sb;
+      #(1);
+      if (result !== expected) begin
+        test_failed = 1;
+        $display("[%0t] error: operation=%s a=0x%08x b=0x%08x expected 0x%08x, got 0x%08x", $time, op.name(), sa, sb, expected, result);
+      end
+    end
+  endtask
+
   // test case
   initial begin
     $dumpfile("./tests/results/test_alu.vcd");
     $dumpvars(0, test_alu);
+    test_failed = 0;
     expected_carry = 0;
     expected_overflow = 0;
 
@@ -348,7 +364,24 @@ module test_alu;
       $display("[%0t] error: operation=GEU, expected result 0x1, got 0x%h", $time, result);
     end
 
+    // shifts use only the low 5 bits of b as the shift amount
+    check_op(ALU_SLL, 32'h0000_0001, 32'd0, 32'h0000_0001);
+    check_op(ALU_SLL, 32'h0000_0001, 32'd31, 32'h8000_0000);
+    check_op(ALU_SLL, 32'h0000_0001, 32'd32, 32'h0000_0001); // 32 -> 0
+    check_op(ALU_SLL, 32'h0000_0001, 32'hFFFF_FFC1, 32'h0000_0002); // upper bits ignored, amount = 1
+    check_op(ALU_SLL, 32'hFFFF_FFFF, 32'd4, 32'hFFFF_FFF0);
 
+    check_op(ALU_SRL, 32'h8000_0000, 32'd0, 32'h8000_0000);
+    check_op(ALU_SRL, 32'h8000_0000, 32'd31, 32'h0000_0001);
+    check_op(ALU_SRL, 32'h8000_0000, 32'd32, 32'h8000_0000);
+    check_op(ALU_SRL, 32'hFFFF_FFFF, 32'hFFFF_FFC4, 32'h0FFF_FFFF); // amount = 4, zero fill
+    check_op(ALU_SRL, 32'h0000_00F0, 32'd4, 32'h0000_000F);
+
+    check_op(ALU_SRA, 32'h8000_0000, 32'd31, 32'hFFFF_FFFF); // sign fill
+    check_op(ALU_SRA, 32'h8000_0000, 32'd4, 32'hF800_0000);
+    check_op(ALU_SRA, 32'h7FFF_FFFF, 32'd4, 32'h07FF_FFFF); // positive stays positive
+    check_op(ALU_SRA, 32'hF000_0000, 32'hFFFF_FFC4, 32'hFF00_0000); // amount = 4
+    check_op(ALU_SRA, 32'h8000_0000, 32'd32, 32'h8000_0000);
 
     finish; // End simulation
   end

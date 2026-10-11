@@ -60,13 +60,13 @@ module alu #(parameter DATA_WIDTH = 32) (
       ALU_GEU: result = (a >= b) ? 1 : 0;
 
       ALU_SLL: begin
-        result = a << b;
+        result = a << b[$clog2(DATA_WIDTH)-1:0]; // only the low log2(width) bits are the shift amount
       end
       ALU_SRL: begin
-        result = a >> b;
+        result = a >> b[$clog2(DATA_WIDTH)-1:0];
       end
       ALU_SRA: begin
-        result = $signed(a) >>> b;
+        result = $signed(a) >>> b[$clog2(DATA_WIDTH)-1:0];
       end
 
       default: begin
