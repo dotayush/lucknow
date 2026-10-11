@@ -22,6 +22,8 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096) (
     input wire [DATA_WIDTH-1:0] trap_pc,
     input wire mret, // return from trap: restores the interrupt enable stack in mstatus
     output wire [DATA_WIDTH-1:0] trap_vector, // address of the trap handler, 31 ~ 2 + 00 (word aligned)
+    output wire priv_user, // the hart is in user mode (otherwise machine mode)
+    output wire [DATA_WIDTH-1:0] mcounteren, // which counters user mode may read
     output wire mtvec_vectored, // mtvec mode 1: interrupts go to trap_vector + 4 * code
 
     // interrupts, from the outside world
@@ -45,6 +47,7 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096) (
 
   reg [DATA_WIDTH-1:0] csr_array [0:COUNT-1];
   reg [63:0] cycle;
+  reg user; // 1: user mode, 0: machine mode
   reg [63:0] instret;
 
   function automatic logic is_writeable(input [11:0] addr);
@@ -57,11 +60,14 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096) (
 
   assign trap_vector = csr_array[CSR_MTVEC] & 32'hFFFFFFFC; // exceptions always go to the base address
   assign mtvec_vectored = csr_array[CSR_MTVEC][0];
+  assign mcounteren = csr_array[CSR_MCOUNTEREN];
+  assign priv_user = user;
 
   // mip has no storage: it is what the outside world says
   wire [DATA_WIDTH-1:0] mip = (irq_software ? IRQ_SOFTWARE : 0) | (irq_timer ? IRQ_TIMER : 0) | (irq_external ? IRQ_EXTERNAL : 0);
   wire [DATA_WIDTH-1:0] enabled = mip & csr_array[CSR_MIE];
-  assign irq_pending = csr_array[CSR_MSTATUS][3] && (enabled != 0);
+  // an interrupt for a higher privilege level is enabled whatever mstatus.MIE says: in user mode machine interrupts always are
+  assign irq_pending = (csr_array[CSR_MSTATUS][3] || priv_user) && (enabled != 0);
   // priority among machine level interrupts: external, software, timer
   assign irq_code = (enabled & IRQ_EXTERNAL) ? 4'd11 : (enabled & IRQ_SOFTWARE) ? 4'd3 : 4'd7;
 
@@ -97,13 +103,14 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096) (
     if (!rst_n) begin
       cycle <= 64'd0;
       instret <= 64'd0;
+      user <= 0;
       for (int i = 0; i < COUNT; i = i + 1) begin
         case (i)
           CSR_MVENDORID: csr_array[i] <= 32'h00000000;
           CSR_MARCHID: csr_array[i] <= 32'h00000000;
           CSR_MIMPID: csr_array[i] <= 32'h00000000;
           CSR_MHARTID: csr_array[i] <= 32'h00000000;
-          CSR_ISA: csr_array[i] <= 32'h40001101; // 32-bit (31:30), RV32I (bit 8), M (bit 12), A (bit 0)
+          CSR_ISA: csr_array[i] <= 32'h40101101; // 32-bit (31:30), RV32I (bit 8), M (bit 12), A (bit 0), U (bit 20)
           CSR_MTVEC: csr_array[i] <= 32'h00000000; // default trap vector
           CSR_MSTATUS: csr_array[i] <= 32'h00001800; // MPP = 11 (M-mode), MPIE = 0, MIE = 0
           default: csr_array[i] <= 'b0;
@@ -122,12 +129,14 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096) (
         // update mstatus to reflect trap
         csr_array[CSR_MSTATUS][7] <= csr_array[CSR_MSTATUS][3]; // MPIE = MIE
         csr_array[CSR_MSTATUS][3] <= 0; // MIE = 0
-        csr_array[CSR_MSTATUS][12:11] <= 2'b11; // MPP = M-mode (11)
+        csr_array[CSR_MSTATUS][12:11] <= user ? 2'b00 : 2'b11; // MPP = the mode the trap came from
+        user <= 0;
       end
       else if (mret) begin
         csr_array[CSR_MSTATUS][3] <= csr_array[CSR_MSTATUS][7]; // MIE = MPIE
         csr_array[CSR_MSTATUS][7] <= 1; // MPIE = 1
-        csr_array[CSR_MSTATUS][12:11] <= 2'b11; // MPP = M-mode (11), the only supported mode
+        csr_array[CSR_MSTATUS][12:11] <= 2'b00; // MPP = the least privileged mode, user
+        user <= (csr_array[CSR_MSTATUS][12:11] != 2'b11);
       end
       else if (do_write) begin
         case (csr_addr)
@@ -139,7 +148,7 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096) (
           end // every implemented bit is a hardware input
           CSR_MIE: csr_array[CSR_MIE] <= wr_val & MIE_MASK;
           CSR_MTVEC: csr_array[CSR_MTVEC] <= wr_val & ~32'h2; // mode is 0 (direct) or 1 (vectored)
-          CSR_MSTATUS: csr_array[CSR_MSTATUS] <= (wr_val & MSTATUS_MASK) | MSTATUS_MPP_M; // only M-mode exists: MPP reads 11
+          CSR_MSTATUS: csr_array[CSR_MSTATUS] <= (wr_val & MSTATUS_MASK) | ((wr_val[12:11] == 2'b11) ? MSTATUS_MPP_M : 0); // MPP is user (00) or machine (11)
           default: csr_array[csr_addr] <= wr_val;
         endcase
       end

@@ -179,6 +179,7 @@ package isa_shared;
     TRAP_LOAD_ACCESS_FAULT = 4'd5, // Load access fault
     TRAP_STORE_ADDR_MISALIGNED = 4'd6, // Store address misaligned
     TRAP_STORE_ACCESS_FAULT = 4'd7, // Store access fault
+    TRAP_ECALL_U = 4'd8, // Environment call from U-mode
     TRAP_ECALL_M = 4'd11, // Environment call from M-mode
     TRAP_NONE = 4'd15 // No trap (not an exception code, just the idle value)
   } trap_cause_e;
@@ -192,6 +193,7 @@ package isa_shared;
   typedef enum logic [11:0] {
     // machine trap and interrupt related CSRs
     CSR_MTVEC = 12'h305, // Machine trap-handler base address
+    CSR_MCOUNTEREN = 12'h306, // counters readable from user mode
     CSR_MCAUSE = 12'h342, // Machine trap cause
     CSR_MTVAL = 12'h343, // Machine bad address or instruction
     CSR_MEPC = 12'h341, // Machine trap program counter

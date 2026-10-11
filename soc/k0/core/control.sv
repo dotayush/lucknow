@@ -127,6 +127,16 @@ module control #(
   wire rmw_next = !irq_take && is_rmw && !illegal_amo && !amo_phase && imem_ready && mem_ready && (mem_error == NO_MEM_ERROR);
   // the whole core waits (pc, registers, csrs, memory are not updated) until the instruction and its data are there
   wire stall = !imem_ready || (data_req && !mem_ready) || rmw_next;
+  wire priv_user; // user mode: machine csrs, mret and wfi are illegal
+  wire [DATA_WIDTH-1:0] mcounteren;
+  // what user mode may not do: csrs of a higher privilege level (address bits 9:8), the counters it has not
+  // been given in mcounteren, mret and wfi
+  wire [11:0] sys_field = instruction[31:20];
+  wire is_system_op = (opcode == SYSTEM);
+  wire priv_illegal = priv_user && is_system_op && (f3 == SYS_ECALL_EBREAK ?
+      (sys_field == SYS_FUN_MRET || sys_field == SYS_FUN_WFI) :
+      ((sys_field[9:8] != 2'b00) || (sys_field[11:10] == 2'b11 && !(sys_field[4:0] <= 5'd2 && mcounteren[sys_field[4:0]]))));
+  wire csr_read_only_write = is_system_op && (f3 != SYS_ECALL_EBREAK) && (csr_op != CSR_NOP) && (sys_field[11:10] == 2'b11); // writing a read only csr
   wire csr_to_rd = (opcode == SYSTEM) && (f3 != SYS_ECALL_EBREAK); // csr instructions return the old csr value in rd
 
   logic [DATA_WIDTH-1:0] temp;
@@ -590,7 +600,7 @@ module control #(
               case (unextended_data[11:0])
                 SYS_FUN_ECALL: begin
                   env_trap = 1;
-                  env_cause = TRAP_ECALL_M;
+                  env_cause = priv_user ? TRAP_ECALL_U : TRAP_ECALL_M;
                 end
                 SYS_FUN_EBREAK: begin
                   env_trap = 1;
@@ -707,7 +717,7 @@ module control #(
       trap = 1;
       trap_cause = env_cause;
     end
-    else if (illegal) begin
+    else if (illegal || priv_illegal || csr_read_only_write) begin
       trap = 1;
       trap_cause = TRAP_ILLEGAL_INSTRUCTION;
       trap_value = instruction;
@@ -823,6 +833,8 @@ module control #(
     .mret(mret && !stall),
     .trap_vector(trap_vector),
     .mtvec_vectored(mtvec_vectored),
+    .priv_user(priv_user),
+    .mcounteren(mcounteren),
     .irq_software(irq_software),
     .irq_timer(irq_timer),
     .irq_external(irq_external),

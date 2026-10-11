@@ -34,6 +34,8 @@ module test_csrfile;
   reg [31:0] mcycle_before;
   wire [31:0] trap_vector;
   wire mtvec_vectored;
+  wire priv_user;
+  wire [31:0] mcounteren;
   reg irq_software;
   reg irq_timer;
   reg irq_external;
@@ -57,6 +59,8 @@ module test_csrfile;
     .mret(mret),
     .trap_vector(trap_vector),
     .mtvec_vectored(mtvec_vectored),
+    .priv_user(priv_user),
+    .mcounteren(mcounteren),
     .irq_software(irq_software),
     .irq_timer(irq_timer),
     .irq_external(irq_external),
@@ -147,9 +151,9 @@ module test_csrfile;
     csr_addr = CSR_ISA;
     csr_op = CSR_NOP;
     #1;
-    if (csr_rdata !== 32'h40001101) begin
+    if (csr_rdata !== 32'h40101101) begin
       test_failed = 1;
-      $display("[%0t] error: read CSR_MISA failed: expected=0x%08x, got=0x%08x", $time, 32'h40001101, csr_rdata);
+      $display("[%0t] error: read CSR_MISA failed: expected=0x%08x, got=0x%08x", $time, 32'h40101101, csr_rdata);
     end else begin
       $display("[%0t] OK: read CSR_MISA data=0x%08x", $time, csr_rdata);
     end
@@ -288,9 +292,9 @@ module test_csrfile;
     @(negedge clk);
     mret = 0;
     #1;
-    if (csr_rdata !== 32'h00001888) begin
+    if (csr_rdata !== 32'h00000088) begin // MPP = user now, the mret itself stayed in machine mode (MPP was 11)
       test_failed = 1;
-      $display("[%0t] error: mstatus after mret expected=0x%08x, got=0x%08x", $time, 32'h00001888, csr_rdata);
+      $display("[%0t] error: mstatus after mret expected=0x%08x, got=0x%08x", $time, 32'h00000088, csr_rdata);
     end else begin
       $display("[%0t] OK: mret restored MIE, mstatus=0x%08x", $time, csr_rdata);
     end
@@ -305,9 +309,9 @@ module test_csrfile;
     @(negedge clk);
     mret = 0;
     #1;
-    if (csr_rdata !== 32'h00001880) begin // MIE = 0 (copied from MPIE = 0), MPIE = 1
+    if (csr_rdata !== 32'h00000080) begin // MIE = 0 (copied from MPIE = 0), MPIE = 1, MPP = user
       test_failed = 1;
-      $display("[%0t] error: mstatus after second mret expected=0x%08x, got=0x%08x", $time, 32'h00001880, csr_rdata);
+      $display("[%0t] error: mstatus after second mret expected=0x%08x, got=0x%08x", $time, 32'h00000080, csr_rdata);
     end else begin
       $display("[%0t] OK: mret with MPIE=0 keeps MIE=0, mstatus=0x%08x", $time, csr_rdata);
     end
@@ -327,13 +331,32 @@ module test_csrfile;
       $display("[%0t] OK: read CSR_MCYCLE data=0x%08x", $time, csr_rdata);
     end
 
-    // only M-mode exists: MPP stays 11 and the unimplemented mstatus bits stay 0
+    // the second mret went to user mode (MPP was 0): a trap brings the hart back to machine mode
+    if (priv_user !== 1'b1) begin
+      test_failed = 1;
+      $display("[%0t] error: mret with MPP = 0 should enter user mode", $time);
+    end
+    trap = 1;
+    trap_cause = TRAP_ILLEGAL_INSTRUCTION;
+    @(negedge clk);
+    trap = 0;
+    #1;
+    if (priv_user !== 1'b0) begin
+      test_failed = 1;
+      $display("[%0t] error: a trap should enter machine mode", $time);
+    end
+    expect_csr("MPP is the mode the trap came from (user)", CSR_MSTATUS, 32'h0000_0000);
+
+    // mstatus keeps MIE, MPIE and MPP only; MPP is user (00) or machine (11), the supervisor encoding is not supported
     write_csr(CSR_MSTATUS, CSR_WRITE, 32'hFFFF_FFFF);
     expect_csr("mstatus keeps MIE, MPIE and MPP only", CSR_MSTATUS, 32'h0000_1888);
     write_csr(CSR_MSTATUS, CSR_CLEAR, 32'h0000_1800);
-    expect_csr("MPP can't be cleared", CSR_MSTATUS, 32'h0000_1888);
+    expect_csr("MPP can be cleared (user)", CSR_MSTATUS, 32'h0000_0088);
     write_csr(CSR_MSTATUS, CSR_WRITE, 32'h0);
-    expect_csr("mstatus all clear but MPP", CSR_MSTATUS, 32'h0000_1800);
+    expect_csr("mstatus all clear", CSR_MSTATUS, 32'h0000_0000);
+    write_csr(CSR_MSTATUS, CSR_WRITE, 32'h0000_0800);
+    expect_csr("MPP = supervisor is not legal: reads user", CSR_MSTATUS, 32'h0000_0000);
+    write_csr(CSR_MSTATUS, CSR_WRITE, 32'h0);
 
     // ---- interrupts ----
     // mstatus.MIE = 0 from the last mret: nothing is taken, but mip still shows what is pending
@@ -443,6 +466,28 @@ module test_csrfile;
     retire = 0;
     expect_csr("minstret after a minstreth write", CSR_MINSTRET, 32'hFFFF_FFFF);
     expect_csr("minstreth after its own write", CSR_MINSTRETH, 32'hFFFF_FFFF);
+
+    // ---- user mode ----
+    // machine interrupts are always enabled there, whatever mstatus.MIE says
+    write_csr(CSR_MSTATUS, CSR_WRITE, 32'h0); // MIE = 0, MPP = user
+    write_csr(CSR_MIE, CSR_WRITE, 32'h80);
+    irq_software = 0;
+    irq_external = 0;
+    irq_timer = 1;
+    expect_irq("machine mode, MIE clear: blocked", 0, 0);
+    mret = 1;
+    @(negedge clk);
+    mret = 0;
+    expect_irq("user mode, MIE clear: taken", 1, 7);
+    trap = 1;
+    trap_interrupt = 1;
+    trap_cause = 4'd7;
+    @(negedge clk);
+    trap = 0;
+    trap_interrupt = 0;
+    expect_irq("back in machine mode: MIE was cleared by the trap", 0, 0);
+    expect_csr("trap from user mode: MPP = user", CSR_MSTATUS, 32'h0000_0000);
+    irq_timer = 0;
 
     // Finish the test
     repeat (5) @(posedge clk);
