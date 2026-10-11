@@ -2,3 +2,7 @@
 *.out
 *.vcd
 /.*
+/.tmp
+/core/l0/riscv-tests
+/core/l0/riscv/build
+/soc/k0/riscv/build
