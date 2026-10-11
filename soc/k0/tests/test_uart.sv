@@ -24,14 +24,16 @@ module test_uart;
   reg [2:0] reg_addr;
   reg [7:0] wdata;
   wire [7:0] rdata;
+  reg rx;
   wire tx;
+  wire irq;
 
   uart #(
     .CLKS_PER_BIT(CLKS_PER_BIT)
   ) dut (
     .clk(clk), .rst_n(rst_n),
     .sel(sel), .write(write), .reg_addr(reg_addr), .wdata(wdata), .rdata(rdata),
-    .tx(tx)
+    .rx(rx), .tx(tx), .irq(irq)
   );
 
   initial begin
@@ -88,6 +90,49 @@ module test_uart;
     end
   endtask
 
+  // a real read: sel is held across a clock edge so the side effects of RBR, LSR and IIR happen
+  task reg_read_expect(input [2:0] a, input [7:0] exp, input string name);
+    begin
+      @(negedge clk);
+      sel = 1;
+      write = 0;
+      reg_addr = a;
+      #1;
+      if (rdata !== exp) begin
+        test_failed = 1;
+        $display("[%0t] error: %s (read of reg %0d) expected 0x%02x, got 0x%02x", $time, name, a, exp, rdata);
+      end
+      @(negedge clk);
+      sel = 0;
+    end
+  endtask
+
+  task expect_irq(input exp, input string name);
+    begin
+      #1;
+      if (irq !== exp) begin
+        test_failed = 1;
+        $display("[%0t] error: %s expected irq=%0d, got %0d", $time, name, exp, irq);
+      end
+    end
+  endtask
+
+  // one frame on rx: start bit, 8 data bits lsb first, stop bit (stop = 0 is a framing error)
+  integer rb;
+  task rx_send(input [7:0] data, input stop);
+    begin
+      rx = 0;
+      repeat (CLKS_PER_BIT) @(negedge clk);
+      for (rb = 0; rb < 8; rb = rb + 1) begin
+        rx = data[rb];
+        repeat (CLKS_PER_BIT) @(negedge clk);
+      end
+      rx = stop;
+      repeat (CLKS_PER_BIT) @(negedge clk);
+      rx = 1;
+    end
+  endtask
+
   task wait_idle;
     begin
       repeat (12 * CLKS_PER_BIT) @(posedge clk);
@@ -104,6 +149,7 @@ module test_uart;
   endtask
 
   integer frame_clks;
+  integer sent_before;
   initial begin
     $dumpfile("./tests/results/test_uart.vcd");
     $dumpvars(0, test_uart);
@@ -112,6 +158,7 @@ module test_uart;
     write = 0;
     reg_addr = 0;
     wdata = 0;
+    rx = 1;
     rst_n = 0;
     repeat (2) @(posedge clk);
     #1 rst_n = 1;
@@ -125,11 +172,11 @@ module test_uart;
 
     // the plain registers hold what is written
     reg_write(3'd1, 8'h05);
-    reg_write(3'd3, 8'h83);
+    reg_write(3'd3, 8'h1B);
     reg_write(3'd4, 8'h0B);
     reg_write(3'd7, 8'hA5);
     reg_expect(3'd1, 8'h05, "IER");
-    reg_expect(3'd3, 8'h83, "LCR");
+    reg_expect(3'd3, 8'h1B, "LCR");
     reg_expect(3'd4, 8'h0B, "MCR");
     reg_expect(3'd7, 8'hA5, "SCR");
     // writing the read only registers changes nothing
@@ -217,6 +264,149 @@ module test_uart;
       test_failed = 1;
       $display("[%0t] error: %0d frames without a stop bit", $time, rx_bad_frames);
     end
+
+
+    // ================= receiver =================
+    reg_write(3'd1, 8'h00);
+    reg_write(3'd3, 8'h03);
+    reg_expect(3'd5, 8'h60, "LSR before receiving");
+
+    // a byte arrives: DR, then RBR returns it and clears DR
+    rx_send(8'h5A, 1'b1);
+    repeat (4) @(negedge clk);
+    reg_expect(3'd5, 8'h61, "LSR DR");
+    reg_read_expect(3'd0, 8'h5A, "RBR");
+    reg_expect(3'd5, 8'h60, "LSR after reading RBR");
+
+    // all bit patterns
+    rx_send(8'h00, 1'b1);
+    repeat (4) @(negedge clk);
+    reg_read_expect(3'd0, 8'h00, "RBR 0x00");
+    rx_send(8'hFF, 1'b1);
+    repeat (4) @(negedge clk);
+    reg_read_expect(3'd0, 8'hFF, "RBR 0xFF");
+    rx_send(8'hA5, 1'b1);
+    repeat (4) @(negedge clk);
+    reg_read_expect(3'd0, 8'hA5, "RBR 0xA5");
+
+    // received data interrupt, enabled by IER bit 0, cleared by reading RBR
+    reg_write(3'd1, 8'h01);
+    expect_irq(0, "no data, no interrupt");
+    rx_send(8'h41, 1'b1);
+    repeat (2) @(negedge clk);
+    expect_irq(1, "received data interrupt");
+    reg_expect(3'd2, 8'h04, "IIR received data");
+    reg_read_expect(3'd0, 8'h41, "RBR 0x41");
+    expect_irq(0, "RBR read clears the interrupt");
+    reg_expect(3'd2, 8'h01, "IIR idle");
+    reg_write(3'd1, 8'h00);
+    rx_send(8'h42, 1'b1);
+    repeat (2) @(negedge clk);
+    expect_irq(0, "data received with the interrupt disabled");
+    reg_write(3'd1, 8'h01);
+    expect_irq(1, "enabling the interrupt raises it for waiting data");
+    reg_read_expect(3'd0, 8'h42, "RBR 0x42");
+
+    // a byte that is read while the next one is still coming does not overrun
+    rx_send(8'h31, 1'b1);
+    fork
+      rx_send(8'h32, 1'b1);
+      begin
+        repeat (3 * CLKS_PER_BIT) @(negedge clk);
+        reg_read_expect(3'd0, 8'h31, "RBR first of two back to back");
+      end
+    join
+    repeat (4) @(negedge clk);
+    reg_read_expect(3'd0, 8'h32, "RBR second of two back to back");
+    reg_expect(3'd5, 8'h60, "no overrun when the reader keeps up");
+
+    // overrun: the unread byte stays, the new one is lost, OE is set until LSR is read
+    reg_write(3'd1, 8'h05);
+    rx_send(8'h11, 1'b1);
+    rx_send(8'h22, 1'b1);
+    repeat (4) @(negedge clk);
+    reg_expect(3'd5, 8'h63, "LSR DR and OE");
+    expect_irq(1, "line status interrupt");
+    reg_expect(3'd2, 8'h06, "IIR line status wins over received data");
+    reg_read_expect(3'd5, 8'h63, "LSR read");
+    reg_expect(3'd5, 8'h61, "OE cleared by the LSR read, DR stays");
+    reg_expect(3'd2, 8'h04, "IIR received data");
+    reg_read_expect(3'd0, 8'h11, "the first byte was kept");
+    reg_expect(3'd5, 8'h60, "nothing left");
+    expect_irq(0, "all clear");
+
+    // framing error (stop bit low): the byte is delivered, FE is set, and a break doesn't make more bytes
+    rx = 0;
+    repeat (40 * CLKS_PER_BIT) @(negedge clk); // a break: low for 40 bit times
+    rx = 1;
+    repeat (2 * CLKS_PER_BIT) @(negedge clk);
+    reg_expect(3'd5, 8'h69, "LSR DR and FE");
+    reg_read_expect(3'd0, 8'h00, "RBR after the break");
+    reg_read_expect(3'd5, 8'h68, "LSR read returns FE");
+    reg_expect(3'd5, 8'h60, "FE cleared, no further bytes from the break");
+    rx_send(8'h77, 1'b1);
+    repeat (2) @(negedge clk);
+    reg_read_expect(3'd0, 8'h77, "a normal byte after the break");
+    rx_send(8'h99, 1'b0);
+    repeat (2) @(negedge clk);
+    reg_read_expect(3'd5, 8'h69, "a frame with a low stop bit sets FE and delivers the byte");
+    reg_read_expect(3'd0, 8'h99, "RBR of the framing error byte");
+    reg_read_expect(3'd5, 8'h60, "clear");
+
+    // a glitch shorter than half a bit is not a start bit
+    rx = 0;
+    repeat (1) @(negedge clk);
+    rx = 1;
+    repeat (12 * CLKS_PER_BIT) @(negedge clk);
+    reg_expect(3'd5, 8'h60, "glitch ignored");
+
+    // ================= transmit empty interrupt =================
+    reg_write(3'd1, 8'h00);
+    wait_idle();
+    reg_write(3'd1, 8'h02);
+    expect_irq(1, "THRE interrupt raised by enabling it while empty");
+    reg_expect(3'd2, 8'h02, "IIR THR empty");
+    reg_read_expect(3'd2, 8'h02, "IIR read");
+    expect_irq(0, "IIR read clears THRE");
+    reg_expect(3'd2, 8'h01, "IIR idle after clearing");
+    reg_write(3'd0, 8'h4F);
+    expect_irq(0, "no interrupt while sending");
+    wait_idle();
+    expect_irq(1, "THRE interrupt when the byte is gone");
+    reg_write(3'd0, 8'h4B);
+    expect_irq(0, "writing THR clears it");
+    wait_idle();
+    expect_irq(1, "and it comes back");
+    // received data has priority over THR empty
+    reg_write(3'd1, 8'h03);
+    rx_send(8'h12, 1'b1);
+    repeat (2) @(negedge clk);
+    reg_expect(3'd2, 8'h04, "IIR data before THR empty");
+    reg_read_expect(3'd0, 8'h12, "RBR");
+    reg_expect(3'd2, 8'h02, "IIR THR empty");
+    reg_write(3'd1, 8'h00);
+    expect_irq(0, "interrupts disabled");
+    reg_read_expect(3'd2, 8'h01, "IIR with nothing enabled");
+
+    // ================= divisor latches =================
+    reg_write(3'd1, 8'h01);
+    rx_send(8'h3C, 1'b1);
+    repeat (2) @(negedge clk);
+    sent_before = rx_count;
+    reg_write(3'd3, 8'h83); // DLAB
+    reg_write(3'd0, 8'h0D); // DLL: must not transmit
+    reg_write(3'd1, 8'h07); // DLM: must not change IER
+    reg_read_expect(3'd0, 8'h0D, "DLL");
+    reg_read_expect(3'd1, 8'h07, "DLM");
+    wait_idle();
+    if (rx_count != sent_before) begin
+      test_failed = 1;
+      $display("[%0t] error: a DLL write transmitted (%0d bytes seen, %0d before)", $time, rx_count, sent_before);
+    end
+    reg_expect(3'd5, 8'h61, "reading DLL did not consume the received byte");
+    reg_write(3'd3, 8'h03);
+    reg_expect(3'd1, 8'h01, "IER untouched by the DLM write");
+    reg_read_expect(3'd0, 8'h3C, "RBR is back with DLAB clear");
 
     finish;
   end
