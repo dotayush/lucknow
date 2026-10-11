@@ -19,9 +19,14 @@ digital designs i've created at the heart of the city of lucknow, india!
 
 - ./soc/k0 (work in progress)
   - core l0 plus the m extension (mul, mulh, mulhsu, mulhu, div, divu, rem, remu)
-  - instruction cache, and the data memory is an external port (`mem_*`) instead of being built in
-  - passes riscv-tests rv32ui, rv32mi and rv32um
-  - not done yet: the a extension, and the bus (`bus.sv` is a sketch that doesn't compile)
+  - one memory map for both ports (qemu virt like): boot rom @ `0x0000_1000` (reset vector),
+    ram @ `0x8000_0000`. the instruction port and the data port see the same ram, so code can
+    be stored and run (`fence.i` works)
+  - `valid/ready` style handshakes on both ports: the core stalls while a fetch or access is
+    not ready, `bus.sv` can add wait states (`FETCH_WAIT`, `DATA_WAIT`) to model slow memory
+  - `soc.sv` wires the core to the bus; unmapped accesses and stores to the rom are access faults
+  - passes riscv-tests rv32ui (including `fence_i`), rv32mi and rv32um, also with wait states
+  - not done yet: the a extension, interrupts, peripherals (uart, clint)
 
 ### riscv-tests.
 the cores are checked against the official [riscv-tests](https://github.com/riscv-software-src/riscv-tests) isa suites.
@@ -32,11 +37,14 @@ into `core/l0/riscv-tests` (ignored by git).
 ./core/l0/riscv/run.sh            # everything
 ./core/l0/riscv/run.sh addi lw    # only some tests
 ./soc/k0/riscv/run.sh             # k0, includes rv32um
+
+# k0 with slow memories (2 cycles per fetch, 3 per data access)
+RV_IFLAGS="-Ptest_riscv.FETCH_WAIT=2 -Ptest_riscv.DATA_WAIT=3" ./soc/k0/riscv/run.sh
 ```
 
 not run, because the feature doesn't exist in the core: rv32mi `illegal` (interrupts, vectored mtvec),
-`instret_overflow` (minstret), `breakpoint` (debug triggers), rv32ui `fence_i` (writable instruction memory)
-and `ma_data` (misaligned data access in hardware).
+`instret_overflow` (minstret), `breakpoint` (debug triggers), and for l0 rv32ui `fence_i` (no writable instruction
+memory); `ma_data` (misaligned data access in hardware) is skipped everywhere.
 
 ### icarus processing.
 > the following requires tools available in the
