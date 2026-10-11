@@ -95,7 +95,7 @@ tree) and compares the program counter of every instruction. `N=4000000 ./linux/
 - Result: the same instructions, in the same order, for the first 205,000 non-loop instructions (a million
   and more with the loops), through the early kernel and `printk`. The first difference is inside
   `printk`'s console handover (`console_lock_spinning_enable` against `..._disable_and_check`): which one
-  runs depends on whether a timer interrupt arrived during a console write, and that depends on time.
+  runs most likely depends on whether a timer interrupt arrived during a console write, which depends on time (not checked instruction by instruction).
   Interrupts are not at the same instruction count on the two, so the traces cannot be expected to
   agree past that point.
 
