@@ -47,9 +47,10 @@ endmodule
 //   UART_BASE uart (16550 register layout, UART_SIZE bytes, registers repeat), byte accesses
 //             only, data port only
 //   CLINT_BASE clint (msip, mtimecmp, mtime), word accesses only, data port only
+//   PLIC_BASE plic (the uart is source PLIC_UART_IRQ), word accesses only, data port only
 //
 // anything else is an access fault (OUT_OF_BOUNDS), as is a store to the rom, a word or
-// halfword access to the uart, a non word access to the clint and a fetch that isn't word aligned. the ports mirror
+// halfword access to the uart, a non word access to the clint or plic and a fetch that isn't word aligned. the ports mirror
 // control's: imem_* for fetch, mem_* for data.
 module bus #(
   parameter DATA_WIDTH = 32,
@@ -61,6 +62,9 @@ module bus #(
   parameter int UART_SIZE = 256,
   parameter [DATA_WIDTH-1:0] CLINT_BASE = 32'h0200_0000,
   parameter int CLINT_SIZE = 32'h1_0000,
+  parameter [DATA_WIDTH-1:0] PLIC_BASE = 32'h0C00_0000,
+  parameter int PLIC_SIZE = 32'h400_0000,
+  parameter int PLIC_UART_IRQ = 10, // source number of the uart, as on qemu virt
   parameter int UART_CLKS_PER_BIT = 8,
   parameter bit UART_ECHO = 0,
   parameter ROM_INIT = "./memory/bootrom.hex",
@@ -88,12 +92,16 @@ module bus #(
   output reg [1:0] mem_error,
 
   // serial console
+  input wire uart_rx,
   output wire uart_tx,
 
   // clint outputs
   output wire [63:0] mtime,
   output wire msip,
-  output wire mtip
+  output wire mtip,
+
+  // plic output
+  output wire meip
 );
 
   // fetch side regions
@@ -104,6 +112,7 @@ module bus #(
   wire d_ram = (mem_addr >= RAM_BASE) && ((mem_addr - RAM_BASE) < RAM_WORDS * 4);
   wire d_uart = (mem_addr >= UART_BASE) && ((mem_addr - UART_BASE) < UART_SIZE);
   wire d_clint = (mem_addr >= CLINT_BASE) && ((mem_addr - CLINT_BASE) < CLINT_SIZE);
+  wire d_plic = (mem_addr >= PLIC_BASE) && ((mem_addr - PLIC_BASE) < PLIC_SIZE);
 
   wire [DATA_WIDTH-1:0] rom_rdata, ram_rdata, rom_fdata, ram_fdata;
   wire [1:0] rom_error, ram_error, rom_ferror, ram_ferror;
@@ -155,8 +164,10 @@ module bus #(
     .fetch_error(ram_ferror)
   );
 
-  // uart: register access completes on the edge that completes the transfer, like a ram write
+  // uart: register access completes on the edge that completes the transfer, like a ram write.
+  // reads count too (RBR, LSR and IIR have side effects), so a read waiting for its wait states does nothing yet
   wire [7:0] uart_rdata;
+  wire uart_irq;
   wire uart_byte = (mem_access_type == BYTE_MEM_ACCESS);
   uart #(
     .CLKS_PER_BIT(UART_CLKS_PER_BIT),
@@ -164,24 +175,26 @@ module bus #(
   ) uart_inst (
     .clk(clk),
     .rst_n(rst_n),
-    .sel((mem_read || (mem_write && mem_ready)) && d_uart && uart_byte),
+    .sel((mem_read || mem_write) && mem_ready && d_uart && uart_byte),
     .write(mem_write),
     .reg_addr(mem_addr[2:0]),
     .wdata(mem_wdata[7:0]),
     .rdata(uart_rdata),
-    .tx(uart_tx)
+    .rx(uart_rx),
+    .tx(uart_tx),
+    .irq(uart_irq)
   );
 
-  // clint: same single cycle access as the uart, 32 bit registers
+  // clint (and plic below): word registers, so only aligned word accesses reach them
   wire [DATA_WIDTH-1:0] clint_rdata;
-  wire clint_word = (mem_access_type == WORD_MEM_ACCESS);
-  wire clint_aligned = (mem_addr[1:0] == 2'b00);
+  wire word_access = (mem_access_type == WORD_MEM_ACCESS);
+  wire word_aligned = (mem_addr[1:0] == 2'b00);
   clint #(
     .DATA_WIDTH(DATA_WIDTH)
   ) clint_inst (
     .clk(clk),
     .rst_n(rst_n),
-    .sel((mem_read || (mem_write && mem_ready)) && d_clint && clint_word && clint_aligned),
+    .sel((mem_read || (mem_write && mem_ready)) && d_clint && word_access && word_aligned),
     .write(mem_write),
     .reg_addr(mem_addr[15:2]),
     .wdata(mem_wdata),
@@ -189,6 +202,27 @@ module bus #(
     .mtime(mtime),
     .msip(msip),
     .mtip(mtip)
+  );
+
+  // plic: a claim has a side effect, so it too happens once, on the completing cycle
+  wire [DATA_WIDTH-1:0] plic_rdata;
+  reg [31:1] plic_src;
+  always @* begin
+    plic_src = '0;
+    plic_src[PLIC_UART_IRQ] = uart_irq;
+  end
+  plic #(
+    .NUM_SOURCES(31)
+  ) plic_inst (
+    .clk(clk),
+    .rst_n(rst_n),
+    .src(plic_src),
+    .sel((mem_read || mem_write) && mem_ready && d_plic && word_access && word_aligned),
+    .write(mem_write),
+    .reg_addr(mem_addr[25:2]),
+    .wdata(mem_wdata),
+    .rdata(plic_rdata),
+    .meip(meip)
   );
 
   always @* begin
@@ -221,9 +255,13 @@ module bus #(
         mem_rdata = {24'h0, uart_rdata};
         mem_error = NO_MEM_ERROR;
       end
-      else if (d_clint && clint_word) begin
-        mem_rdata = clint_rdata;
-        mem_error = clint_aligned ? NO_MEM_ERROR : ADDRESS_MISALIGNED;
+      else if (d_clint && word_access) begin
+        mem_rdata = word_aligned ? clint_rdata : '0;
+        mem_error = word_aligned ? NO_MEM_ERROR : ADDRESS_MISALIGNED;
+      end
+      else if (d_plic && word_access) begin
+        mem_rdata = word_aligned ? plic_rdata : '0;
+        mem_error = word_aligned ? NO_MEM_ERROR : ADDRESS_MISALIGNED;
       end
     end
   end

@@ -46,6 +46,7 @@ module test_bus;
   wire [63:0] mtime;
   wire msip;
   wire mtip;
+  wire meip;
 
   bus #(
     .ROM_BASE(ROM_BASE), .ROM_WORDS(ROM_WORDS),
@@ -55,10 +56,11 @@ module test_bus;
     .imem_addr(imem_addr), .imem_data(imem_data), .imem_ready(imem_ready), .imem_error(imem_error),
     .mem_read(mem_read), .mem_write(mem_write), .mem_access_type(mem_access_type),
     .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_rdata(mem_rdata), .mem_ready(mem_ready), .mem_error(mem_error),
-    .uart_tx(uart_tx),
+    .uart_rx(1'b1), .uart_tx(uart_tx),
     .mtime(mtime),
     .msip(msip),
-    .mtip(mtip)
+    .mtip(mtip),
+    .meip(meip)
   );
 
   // ---- dut with wait states
@@ -85,10 +87,11 @@ module test_bus;
     .imem_addr(s_imem_addr), .imem_data(s_imem_data), .imem_ready(s_imem_ready), .imem_error(s_imem_error),
     .mem_read(s_mem_read), .mem_write(s_mem_write), .mem_access_type(s_mem_access_type),
     .mem_addr(s_mem_addr), .mem_wdata(s_mem_wdata), .mem_rdata(s_mem_rdata), .mem_ready(s_mem_ready), .mem_error(s_mem_error),
-    .uart_tx(s_uart_tx),
+    .uart_rx(1'b1), .uart_tx(s_uart_tx),
     .mtime(),
     .msip(),
-    .mtip()
+    .mtip(),
+    .meip()
   );
 
   // ---- helpers
@@ -253,11 +256,31 @@ module test_bus;
     load(32'h0200_0000, HALF_MEM_ACCESS, 32'h0, OUT_OF_BOUNDS, "clint half load");
     store(32'h0200_0000, BYTE_MEM_ACCESS, 32'h1, OUT_OF_BOUNDS, "clint byte store");
     expect_bit(msip, 1'b0, "a faulting store does not reach the clint");
+    store(32'h0200_4000, WORD_MEM_ACCESS, 32'h77, NO_MEM_ERROR, "clint mtimecmp low, a non zero word");
+    load(32'h0200_4002, WORD_MEM_ACCESS, 32'h0, ADDRESS_MISALIGNED, "clint misaligned load returns no data");
+    store(32'h0200_4000, WORD_MEM_ACCESS, 32'h0, NO_MEM_ERROR, "clint mtimecmp low back to 0");
     load(32'h0200_0002, WORD_MEM_ACCESS, 32'h0, ADDRESS_MISALIGNED, "clint misaligned load");
     store(32'h0200_0002, WORD_MEM_ACCESS, 32'h1, ADDRESS_MISALIGNED, "clint misaligned store");
     expect_bit(msip, 1'b0, "a misaligned store does not reach the clint");
     load(32'h0201_0000, WORD_MEM_ACCESS, 32'h0, OUT_OF_BOUNDS, "just above the clint window");
     load(32'h01FF_FFFC, WORD_MEM_ACCESS, 32'h0, OUT_OF_BOUNDS, "just below the clint window");
+
+    // plic @ 0x0C00_0000: 32 bit registers, word accesses only, data port only
+    fetch(32'h0C00_0000, 32'h0, OUT_OF_BOUNDS, "plic (data port only)");
+    load(32'h0C00_0028, WORD_MEM_ACCESS, 32'h0, NO_MEM_ERROR, "plic priority of the uart source at reset");
+    store(32'h0C00_0028, WORD_MEM_ACCESS, 32'h5, NO_MEM_ERROR, "plic priority");
+    load(32'h0C00_0028, WORD_MEM_ACCESS, 32'h5, NO_MEM_ERROR, "plic priority readback");
+    load(32'h0C00_0028, BYTE_MEM_ACCESS, 32'h0, OUT_OF_BOUNDS, "plic byte load");
+    load(32'h0C00_0028, HALF_MEM_ACCESS, 32'h0, OUT_OF_BOUNDS, "plic half load");
+    store(32'h0C00_0028, BYTE_MEM_ACCESS, 32'h0, OUT_OF_BOUNDS, "plic byte store");
+    load(32'h0C00_0028, WORD_MEM_ACCESS, 32'h5, NO_MEM_ERROR, "a faulting store does not reach the plic");
+    load(32'h0C00_002A, WORD_MEM_ACCESS, 32'h0, ADDRESS_MISALIGNED, "plic misaligned load");
+    store(32'h0C00_002A, WORD_MEM_ACCESS, 32'h0, ADDRESS_MISALIGNED, "plic misaligned store");
+    load(32'h0C00_0028, WORD_MEM_ACCESS, 32'h5, NO_MEM_ERROR, "a misaligned store does not reach the plic");
+    store(32'h0C00_0028, WORD_MEM_ACCESS, 32'h0, NO_MEM_ERROR, "plic priority back to 0");
+    load(32'h0C20_0004, WORD_MEM_ACCESS, 32'h0, NO_MEM_ERROR, "plic claim with nothing pending");
+    load(32'h0C3F_FFFC, WORD_MEM_ACCESS, 32'h0, NO_MEM_ERROR, "last word of the plic window");
+    load(32'h0BFF_FFFC, WORD_MEM_ACCESS, 32'h0, OUT_OF_BOUNDS, "just below the plic window");
 
     // misaligned accesses fault inside the regions
     load(RAM_BASE + 2, WORD_MEM_ACCESS, 32'h0, ADDRESS_MISALIGNED, "ram");
@@ -359,7 +382,58 @@ module test_bus;
     expect_bit(s_mem_error === OUT_OF_BOUNDS, 1'b1, "unmapped load error");
     s_mem_read = 0;
 
+    // the uart's interrupt reaches meip through the plic, and a claim read with wait states happens once,
+    // on the completing edge, returning the id (a claim on the first cycle would return 0)
+    repeat (100) @(posedge clk); // the uart finishes its byte
+    s_mem_access_type = WORD_MEM_ACCESS;
+    s_bus_write(32'h0C00_0028, WORD_MEM_ACCESS, 32'h1); // priority of source 10
+    s_bus_write(32'h0C00_2000, WORD_MEM_ACCESS, 32'h400); // enable source 10
+    expect_bit(slow.meip, 1'b0, "no interrupt before the uart asks for one");
+    s_bus_write(32'h1000_0001, BYTE_MEM_ACCESS, 32'h02); // uart IER: THR empty
+    @(posedge clk); #1;
+    expect_bit(slow.meip, 1'b1, "uart interrupt reaches meip");
+    s_mem_addr = 32'h0C20_0004;
+    s_mem_read = 1;
+    #1;
+    for (i = 0; i < 3; i = i + 1) begin
+      @(posedge clk); #1;
+      expect_bit(slow.plic_inst.in_flight[10], 1'b0, "claim waits for the end of the access");
+    end
+    expect_bit(s_mem_ready, 1'b1, "claim ready");
+    expect_bit(s_mem_rdata === 32'd10, 1'b1, "claim returns the uart source");
+    @(posedge clk); #1;
+    expect_bit(slow.plic_inst.in_flight[10], 1'b1, "claimed on the completing edge");
+    s_mem_read = 0;
+    expect_bit(slow.meip, 1'b0, "claimed: no interrupt");
+    s_bus_write(32'h0C20_0004, WORD_MEM_ACCESS, 32'd10); // complete, uart still asking
+    @(posedge clk); #1;
+    expect_bit(slow.meip, 1'b1, "level interrupt still asserted after the completion");
+    // reading the uart's IIR through the bus clears the THR empty interrupt, then the plic goes quiet
+    s_mem_addr = 32'h1000_0002;
+    s_mem_access_type = BYTE_MEM_ACCESS;
+    s_mem_read = 1;
+    repeat (4) @(posedge clk);
+    #1;
+    s_mem_read = 0;
+    repeat (3) @(posedge clk);
+    expect_bit(slow.uart_irq, 1'b0, "IIR read cleared the uart interrupt");
+
     finish;
   end
+
+  // a write through the slow port: launched after a clock edge, held until it has landed
+  task s_bus_write(input [31:0] a, input [1:0] t, input [31:0] d);
+    begin
+      @(posedge clk); #1;
+      s_mem_addr = a;
+      s_mem_access_type = t;
+      s_mem_wdata = d;
+      s_mem_write = 1;
+      repeat (4) @(posedge clk);
+      #1;
+      s_mem_write = 0;
+      s_mem_access_type = WORD_MEM_ACCESS;
+    end
+  endtask
 
 endmodule

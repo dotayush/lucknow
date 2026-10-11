@@ -26,7 +26,8 @@ module test_riscv;
     .DATA_WAIT(DATA_WAIT)
   ) dut (
     .clk(clk),
-    .rst_n(rst_n)
+    .rst_n(rst_n),
+    .uart_rx(1'b1)
   );
 
   initial begin

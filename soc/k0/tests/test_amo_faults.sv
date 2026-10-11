@@ -24,8 +24,8 @@ module test_amo_faults;
   reg clk;
   reg rst_n;
 
-  soc fast (.clk(clk), .rst_n(rst_n));
-  soc #(.FETCH_WAIT(1), .DATA_WAIT(2)) slow (.clk(clk), .rst_n(rst_n));
+  soc fast (.clk(clk), .rst_n(rst_n), .uart_rx(1'b1));
+  soc #(.FETCH_WAIT(1), .DATA_WAIT(2)) slow (.clk(clk), .rst_n(rst_n), .uart_rx(1'b1));
 
   initial begin
     clk = 0;

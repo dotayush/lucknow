@@ -11,11 +11,16 @@ module test_hello;
   parameter MAX_CYCLES = 100000;
   parameter int FETCH_WAIT = 0;
   parameter int DATA_WAIT = 0;
+  parameter RX_STRING = ""; // bytes typed on the serial line, one after the other
+  parameter int RX_LENGTH = 0; // characters in RX_STRING
+  parameter int RX_DELAY = 1000; // clocks before the first byte
+  parameter int RX_GAP = 2; // idle bit times between bytes
 
   localparam real CLK_HALF_PERIOD = 5.0;
 
   reg clk;
   reg rst_n;
+  reg uart_rx;
   wire uart_tx;
 
   soc #(
@@ -26,6 +31,7 @@ module test_hello;
   ) dut (
     .clk(clk),
     .rst_n(rst_n),
+    .uart_rx(uart_rx),
     .uart_tx(uart_tx)
   );
 
@@ -38,6 +44,24 @@ module test_hello;
     rst_n = 0;
     #2;
     rst_n = 1;
+  end
+
+  // serial transmitter: what the program reads
+  integer rx_char;
+  integer rx_bit;
+  initial begin
+    uart_rx = 1;
+    repeat (RX_DELAY) @(negedge clk);
+    for (rx_char = 0; rx_char < RX_LENGTH; rx_char = rx_char + 1) begin
+      uart_rx = 0; // start
+      repeat (CLKS_PER_BIT) @(negedge clk);
+      for (rx_bit = 0; rx_bit < 8; rx_bit = rx_bit + 1) begin
+        uart_rx = RX_STRING[(RX_LENGTH - 1 - rx_char) * 8 + rx_bit];
+        repeat (CLKS_PER_BIT) @(negedge clk);
+      end
+      uart_rx = 1; // stop, then the gap
+      repeat (CLKS_PER_BIT * (1 + RX_GAP)) @(negedge clk);
+    end
   end
 
   // serial receiver

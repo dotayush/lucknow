@@ -11,6 +11,7 @@ module soc #(
 )(
   input wire clk,
   input wire rst_n,
+  input wire uart_rx,
   output wire uart_tx
 );
 
@@ -31,6 +32,7 @@ module soc #(
   wire [63:0] mtime;
   wire msip;
   wire mtip;
+  wire meip;
 
   control #(
     .DATA_WIDTH(DATA_WIDTH)
@@ -52,6 +54,7 @@ module soc #(
     .mem_error(mem_error),
     .irq_software(msip),
     .irq_timer(mtip),
+    .irq_external(meip),
     .time_value(mtime)
   );
 
@@ -79,10 +82,12 @@ module soc #(
     .mem_rdata(mem_data_in),
     .mem_ready(mem_ready),
     .mem_error(mem_error),
+    .uart_rx(uart_rx),
     .uart_tx(uart_tx),
     .mtime(mtime),
     .msip(msip),
-    .mtip(mtip)
+    .mtip(mtip),
+    .meip(meip)
   );
 
 endmodule
