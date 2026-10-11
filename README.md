@@ -19,14 +19,17 @@ digital designs i've created at the heart of the city of lucknow, india!
 
 - ./soc/k0 (work in progress)
   - core l0 plus the m extension (mul, mulh, mulhsu, mulhu, div, divu, rem, remu)
+    and the a extension (lr.w, sc.w, and the nine word amos; one word reservation, any store clears it)
   - one memory map for both ports (qemu virt like): boot rom @ `0x0000_1000` (reset vector),
     ram @ `0x8000_0000`. the instruction port and the data port see the same ram, so code can
     be stored and run (`fence.i` works)
   - `valid/ready` style handshakes on both ports: the core stalls while a fetch or access is
     not ready, `bus.sv` can add wait states (`FETCH_WAIT`, `DATA_WAIT`) to model slow memory
-  - `soc.sv` wires the core to the bus; unmapped accesses and stores to the rom are access faults
-  - passes riscv-tests rv32ui (including `fence_i`), rv32mi and rv32um, also with wait states
-  - not done yet: the a extension, interrupts, peripherals (uart, clint)
+  - uart @ `0x1000_0000`: transmit only, 16550 register layout (what the ns16550a driver and earlycon use),
+    byte accesses, 8N1 at clk/`UART_CLKS_PER_BIT`; `UART_ECHO=1` prints the bytes in simulation
+  - `soc.sv` wires the core to the bus; unmapped accesses, stores to the rom and non-byte uart accesses are access faults
+  - passes riscv-tests rv32ui (including `fence_i`), rv32mi, rv32um and rv32ua, also with wait states
+  - not done yet: interrupts (timer, clint), uart receive, more peripherals
 
 ### riscv-tests.
 the cores are checked against the official [riscv-tests](https://github.com/riscv-software-src/riscv-tests) isa suites.
@@ -44,7 +47,14 @@ RV_IFLAGS="-Ptest_riscv.FETCH_WAIT=2 -Ptest_riscv.DATA_WAIT=3" ./soc/k0/riscv/ru
 
 not run, because the feature doesn't exist in the core: rv32mi `illegal` (interrupts, vectored mtvec),
 `instret_overflow` (minstret), `breakpoint` (debug triggers), and for l0 rv32ui `fence_i` (no writable instruction
-memory); `ma_data` (misaligned data access in hardware) is skipped everywhere.
+memory); `ma_data` (misaligned data access in hardware) is skipped everywhere. the a extension tests only exist
+for k0 (rv32ua, `RV_UA=1`).
+
+a bare-metal program on k0 (builds `programs/<name>.S`, runs it, checks what the uart prints):
+
+```bash
+./soc/k0/programs/run.sh hello
+```
 
 ### icarus processing.
 > the following requires tools available in the
