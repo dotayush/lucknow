@@ -43,6 +43,9 @@ module test_bus;
   wire mem_ready;
   wire [1:0] mem_error;
   wire uart_tx;
+  wire [63:0] mtime;
+  wire msip;
+  wire mtip;
 
   bus #(
     .ROM_BASE(ROM_BASE), .ROM_WORDS(ROM_WORDS),
@@ -52,7 +55,10 @@ module test_bus;
     .imem_addr(imem_addr), .imem_data(imem_data), .imem_ready(imem_ready), .imem_error(imem_error),
     .mem_read(mem_read), .mem_write(mem_write), .mem_access_type(mem_access_type),
     .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_rdata(mem_rdata), .mem_ready(mem_ready), .mem_error(mem_error),
-    .uart_tx(uart_tx)
+    .uart_tx(uart_tx),
+    .mtime(mtime),
+    .msip(msip),
+    .mtip(mtip)
   );
 
   // ---- dut with wait states
@@ -79,7 +85,10 @@ module test_bus;
     .imem_addr(s_imem_addr), .imem_data(s_imem_data), .imem_ready(s_imem_ready), .imem_error(s_imem_error),
     .mem_read(s_mem_read), .mem_write(s_mem_write), .mem_access_type(s_mem_access_type),
     .mem_addr(s_mem_addr), .mem_wdata(s_mem_wdata), .mem_rdata(s_mem_rdata), .mem_ready(s_mem_ready), .mem_error(s_mem_error),
-    .uart_tx(s_uart_tx)
+    .uart_tx(s_uart_tx),
+    .mtime(),
+    .msip(),
+    .mtip()
   );
 
   // ---- helpers
@@ -228,6 +237,27 @@ module test_bus;
     store(32'h1000_0000, BYTE_MEM_ACCESS, 32'h00000041, NO_MEM_ERROR, "uart THR");
     load(32'h1000_0005, BYTE_MEM_ACCESS, 32'h00000000, NO_MEM_ERROR, "uart LSR busy after a THR store");
     expect_bit(uart_tx, 1'b0, "uart start bit");
+
+    // clint @ 0x0200_0000: 32 bit registers, word accesses only, data port only
+    fetch(32'h0200_0000, 32'h0, OUT_OF_BOUNDS, "clint (data port only)");
+    load(32'h0200_4000, WORD_MEM_ACCESS, 32'hFFFF_FFFF, NO_MEM_ERROR, "clint mtimecmp low at reset");
+    load(32'h0200_0000, WORD_MEM_ACCESS, 32'h0, NO_MEM_ERROR, "clint msip");
+    store(32'h0200_0000, WORD_MEM_ACCESS, 32'h1, NO_MEM_ERROR, "clint msip");
+    expect_bit(msip, 1'b1, "msip output follows the register");
+    load(32'h0200_0000, WORD_MEM_ACCESS, 32'h1, NO_MEM_ERROR, "clint msip readback");
+    store(32'h0200_4000, WORD_MEM_ACCESS, 32'h0, NO_MEM_ERROR, "clint mtimecmp low");
+    store(32'h0200_4004, WORD_MEM_ACCESS, 32'h0, NO_MEM_ERROR, "clint mtimecmp high");
+    expect_bit(mtip, 1'b1, "mtip output once mtime >= mtimecmp");
+    store(32'h0200_0000, WORD_MEM_ACCESS, 32'h0, NO_MEM_ERROR, "clint msip clear");
+    load(32'h0200_0000, BYTE_MEM_ACCESS, 32'h0, OUT_OF_BOUNDS, "clint byte load");
+    load(32'h0200_0000, HALF_MEM_ACCESS, 32'h0, OUT_OF_BOUNDS, "clint half load");
+    store(32'h0200_0000, BYTE_MEM_ACCESS, 32'h1, OUT_OF_BOUNDS, "clint byte store");
+    expect_bit(msip, 1'b0, "a faulting store does not reach the clint");
+    load(32'h0200_0002, WORD_MEM_ACCESS, 32'h0, ADDRESS_MISALIGNED, "clint misaligned load");
+    store(32'h0200_0002, WORD_MEM_ACCESS, 32'h1, ADDRESS_MISALIGNED, "clint misaligned store");
+    expect_bit(msip, 1'b0, "a misaligned store does not reach the clint");
+    load(32'h0201_0000, WORD_MEM_ACCESS, 32'h0, OUT_OF_BOUNDS, "just above the clint window");
+    load(32'h01FF_FFFC, WORD_MEM_ACCESS, 32'h0, OUT_OF_BOUNDS, "just below the clint window");
 
     // misaligned accesses fault inside the regions
     load(RAM_BASE + 2, WORD_MEM_ACCESS, 32'h0, ADDRESS_MISALIGNED, "ram");

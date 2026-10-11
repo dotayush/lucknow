@@ -46,9 +46,10 @@ endmodule
 //   RAM_BASE  ram, the instruction port and the data port see the same words
 //   UART_BASE uart (16550 register layout, UART_SIZE bytes, registers repeat), byte accesses
 //             only, data port only
+//   CLINT_BASE clint (msip, mtimecmp, mtime), word accesses only, data port only
 //
 // anything else is an access fault (OUT_OF_BOUNDS), as is a store to the rom, a word or
-// halfword access to the uart and a fetch that isn't word aligned. the ports mirror
+// halfword access to the uart, a non word access to the clint and a fetch that isn't word aligned. the ports mirror
 // control's: imem_* for fetch, mem_* for data.
 module bus #(
   parameter DATA_WIDTH = 32,
@@ -58,6 +59,8 @@ module bus #(
   parameter int RAM_WORDS = 8192,
   parameter [DATA_WIDTH-1:0] UART_BASE = 32'h1000_0000,
   parameter int UART_SIZE = 256,
+  parameter [DATA_WIDTH-1:0] CLINT_BASE = 32'h0200_0000,
+  parameter int CLINT_SIZE = 32'h1_0000,
   parameter int UART_CLKS_PER_BIT = 8,
   parameter bit UART_ECHO = 0,
   parameter ROM_INIT = "./memory/bootrom.hex",
@@ -85,7 +88,12 @@ module bus #(
   output reg [1:0] mem_error,
 
   // serial console
-  output wire uart_tx
+  output wire uart_tx,
+
+  // clint outputs
+  output wire [63:0] mtime,
+  output wire msip,
+  output wire mtip
 );
 
   // fetch side regions
@@ -95,6 +103,7 @@ module bus #(
   wire d_rom = (mem_addr >= ROM_BASE) && ((mem_addr - ROM_BASE) < ROM_WORDS * 4);
   wire d_ram = (mem_addr >= RAM_BASE) && ((mem_addr - RAM_BASE) < RAM_WORDS * 4);
   wire d_uart = (mem_addr >= UART_BASE) && ((mem_addr - UART_BASE) < UART_SIZE);
+  wire d_clint = (mem_addr >= CLINT_BASE) && ((mem_addr - CLINT_BASE) < CLINT_SIZE);
 
   wire [DATA_WIDTH-1:0] rom_rdata, ram_rdata, rom_fdata, ram_fdata;
   wire [1:0] rom_error, ram_error, rom_ferror, ram_ferror;
@@ -163,6 +172,25 @@ module bus #(
     .tx(uart_tx)
   );
 
+  // clint: same single cycle access as the uart, 32 bit registers
+  wire [DATA_WIDTH-1:0] clint_rdata;
+  wire clint_word = (mem_access_type == WORD_MEM_ACCESS);
+  wire clint_aligned = (mem_addr[1:0] == 2'b00);
+  clint #(
+    .DATA_WIDTH(DATA_WIDTH)
+  ) clint_inst (
+    .clk(clk),
+    .rst_n(rst_n),
+    .sel((mem_read || (mem_write && mem_ready)) && d_clint && clint_word && clint_aligned),
+    .write(mem_write),
+    .reg_addr(mem_addr[15:2]),
+    .wdata(mem_wdata),
+    .rdata(clint_rdata),
+    .mtime(mtime),
+    .msip(msip),
+    .mtip(mtip)
+  );
+
   always @* begin
     imem_data = '0;
     imem_error = OUT_OF_BOUNDS; // unmapped
@@ -192,6 +220,10 @@ module bus #(
       else if (d_uart && uart_byte) begin
         mem_rdata = {24'h0, uart_rdata};
         mem_error = NO_MEM_ERROR;
+      end
+      else if (d_clint && clint_word) begin
+        mem_rdata = clint_rdata;
+        mem_error = clint_aligned ? NO_MEM_ERROR : ADDRESS_MISALIGNED;
       end
     end
   end
