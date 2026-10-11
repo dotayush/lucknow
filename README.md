@@ -94,10 +94,12 @@ the plan and its status is in [`soc/k0/docs/PLAN.md`](./soc/k0/docs/PLAN.md). ne
 `flex`, `bison`, python3 and a network connection for the first kernel download (~140 MB).
 
 ```bash
-./soc/k0/sim/build.sh        # verilator model, 8 MiB ram
+./soc/k0/sim/build.sh        # verilator model, 16 MiB ram
 ./soc/k0/linux/build.sh      # downloads linux 6.12.112, builds Image, k0.dtb and the init
 ./soc/k0/linux/run.sh        # boots to the "k0# " prompt (~30 s)
 ./soc/k0/linux/test.sh       # boots, types commands, checks the answers
+# busybox shell with uClibc-ng and several processes (buildroot, 20 to 40 minutes the first time):
+./soc/k0/linux/buildroot/build.sh && ./soc/k0/linux/busybox.sh && ./soc/k0/linux/test_busybox.sh
 ./soc/k0/programs/run.sh umode   # user mode, bare metal
 ```
 

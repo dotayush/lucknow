@@ -13,7 +13,7 @@ on the uart and runs commands typed at it. `linux/test.sh` checks that.
 |---|---|---|
 | 0 toolchain and reference | done, except QEMU | kernel 6.12.112 pinned in `linux/build.sh`. The bare-metal `riscv32-unknown-elf` gcc builds the kernel. No QEMU on this machine, so there was no reference log. The kernel's own `dtc` builds the device tree. `bc` was missing and was built from source |
 | 1 boot interface | done | rom sets `a0`, `a1`. `programs/` has no a0/a1 print test, the kernel finding its device tree is the check |
-| 2 ram and simulator | done | 8 MiB ram, Verilator model (`sim/`), about 1.7 MIPS. No trace diff against another model yet (the `+trace` option exists) |
+| 2 ram and simulator | done | 16 MiB ram (8 MiB is not enough for busybox), Verilator model (`sim/`), about 1.7 MIPS. No trace diff against another model yet (the `+trace` option exists) |
 | 3 timer, interrupts, console | done | CLINT timer, PLIC and the 8250 driver (as 16450) work. The kernel probes and emulates misaligned accesses (one trap at boot). Overruns happen if a typed byte arrives before the previous one was read: the uart has no fifo |
 | 4 user mode | done | the experiment (MPP stuck at `11`) gave `Oops - environment call from M-mode` at the first syscall of `init`, so user mode was needed. Implemented, see `CHIP.md` |
 | 5 userland | partly | initramfs with a freestanding shell as `/init`. No busybox, no libc, no block device |
@@ -33,7 +33,7 @@ Findings that changed the plan:
   from a task. Without U-mode the first `ecall` from `init` fails.
 
 Still open (not needed for the shell, listed in order of usefulness):
-1. busybox and a libc for NOMMU RV32 (uClibc-ng + elf2flt through Buildroot), more than one process, `vfork`.
+1. ~~busybox and a libc~~ done: Buildroot 2025.02.7, uClibc-ng, busybox as bFLT (elf2flt), `linux/buildroot/build.sh`, `linux/busybox.sh`, `linux/test_busybox.sh`. The shell runs pipes and several processes. Boot to the prompt is 92 million clocks, about a minute in Verilator. Needs 16 MiB of ram (8 MiB left no contiguous block for the 730 KiB busybox).
 2. ~~A FIFO in the uart~~ done: 16 byte FIFOs, `ns16550a`, trigger levels, character timeout. Linux types a whole line with 2 bit times between bytes.
 3. A reference run on QEMU (`qemu-system-riscv32 -M virt` with the same kernel) to diff traces against.
 4. PMP, so user tasks cannot overwrite the kernel.

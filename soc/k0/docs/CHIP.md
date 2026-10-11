@@ -46,7 +46,7 @@ addresses.
 
 Everything else is an access fault. So is: a store to the rom, a non-byte access to the
 uart, a non-word or misaligned access to the clint or plic, and fetch from anywhere
-but rom or ram. The boot rom holds four instructions: `a1` = `0x807F_0000` (where the device tree goes for an 8 MiB ram), `a0` = 0 (hart id), jump to `0x8000_0000`; the program
+but rom or ram. The boot rom holds four instructions: `a1` = `0x807F_0000` (where the device tree goes, low in a 16 MiB ram so it stays out of the way), `a0` = 0 (hart id), jump to `0x8000_0000`; the program
 image is preloaded into ram with `RAM_INIT` (a `$readmemh` hex file, one word per line).
 This is how every test and program starts: there is no loader or flash yet.
 
@@ -223,7 +223,7 @@ lowest id on a tie. Only the UART is connected (source 10).
 k0 boots a no-MMU Linux 6.12 (M-mode kernel build, `CONFIG_RISCV_M_MODE`, user tasks in user mode)
 to a shell on the uart. Everything for this is in `linux/` and `sim/`, the steps are in `docs/PLAN.md`.
 
-- `sim/build.sh` builds a Verilator model of the soc with 8 MiB of ram. `sim/obj/Vsoc` loads binary
+- `sim/build.sh` builds a Verilator model of the soc with 16 MiB of ram. `sim/obj/Vsoc` loads binary
   images into ram, drives the uart receive line from a file and prints what the uart sends. Roughly
   1.7 million instructions per second of host time.
 - `linux/build.sh` builds the kernel, the device tree (`k0.dts`) and a small freestanding `init` with a
