@@ -2,6 +2,8 @@
 # builds a bare-metal program from programs/<name>.S, runs it on the soc and checks the uart output.
 #   ./programs/run.sh              runs hello
 #   ./programs/run.sh hello
+#   ./programs/run.sh timer
+#   IFLAGS="-Ptest_hello.FETCH_WAIT=2 -Ptest_hello.DATA_WAIT=3" ./programs/run.sh timer   (slow memories)
 # needs riscv32-unknown-elf-gcc (TOOLCHAIN) and iverilog. run from anywhere.
 set -u
 
@@ -18,6 +20,12 @@ ${TOOLCHAIN}objcopy -O binary $BUILD/$name.elf $BUILD/$name.bin
 od -An -v -tx4 -w4 $BUILD/$name.bin | tr -d ' ' > $BUILD/$name.hex
 
 cd $K0 || exit 1
-iverilog -g2012 -o $BUILD/$name.out -Ptest_hello.IMAGE=\"$BUILD/$name.hex\" \
+# what the program should print: programs/<name>.expect (no newline handling), hello is the default
+EXPECT_FLAGS=
+if [ -f $HERE/$name.expect ]; then
+  expected=$(cat $HERE/$name.expect)
+  EXPECT_FLAGS="-Ptest_hello.EXPECTED=\"$expected\" -Ptest_hello.LENGTH=${#expected}"
+fi
+iverilog -g2012 -o $BUILD/$name.out -Ptest_hello.IMAGE=\"$BUILD/$name.hex\" $EXPECT_FLAGS ${IFLAGS:-} \
   -c compile.f tests/test_hello.sv || exit 1
 vvp -n $BUILD/$name.out | grep -E "^(PASS|FAIL|  \[)"

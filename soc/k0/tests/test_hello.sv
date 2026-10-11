@@ -9,6 +9,8 @@ module test_hello;
   parameter int LENGTH = 15; // characters in EXPECTED
   parameter int CLKS_PER_BIT = 8;
   parameter MAX_CYCLES = 100000;
+  parameter int FETCH_WAIT = 0;
+  parameter int DATA_WAIT = 0;
 
   localparam real CLK_HALF_PERIOD = 5.0;
 
@@ -18,6 +20,8 @@ module test_hello;
 
   soc #(
     .RAM_INIT(IMAGE),
+    .FETCH_WAIT(FETCH_WAIT),
+    .DATA_WAIT(DATA_WAIT),
     .UART_CLKS_PER_BIT(CLKS_PER_BIT)
   ) dut (
     .clk(clk),
@@ -53,6 +57,15 @@ module test_hello;
     end
   end
 
+  // an interrupt must pre-empt the instruction completely: no data transfer in the cycle it is taken
+  integer irq_with_transfer;
+  initial irq_with_transfer = 0;
+  always @(posedge clk) begin
+    if (rst_n && dut.core_inst.trap_interrupt && dut.core_inst.trap && (dut.mem_read || dut.mem_write)) begin
+      irq_with_transfer <= irq_with_transfer + 1;
+    end
+  end
+
   integer cycles;
   integer ok;
   initial begin
@@ -61,14 +74,15 @@ module test_hello;
       @(posedge clk);
       cycles = cycles + 1;
     end
-    ok = (count == LENGTH);
+    ok = (count == LENGTH) && (irq_with_transfer == 0);
     for (int c = 0; c < LENGTH && c < count; c = c + 1) begin
       if (received[c] !== EXPECTED[(LENGTH - 1 - c) * 8 +: 8]) ok = 0;
     end
     if (ok) begin
       $display("PASS: %0d characters in %0d cycles", count, cycles);
     end else begin
-      $display("FAIL: expected %0d characters, got %0d", LENGTH, count);
+      $display("FAIL: expected %0d characters, got %0d (%0d interrupts taken with a data transfer)",
+               LENGTH, count, irq_with_transfer);
       for (int c = 0; c < count; c = c + 1) $display("  [%0d] 0x%02x", c, received[c]);
     end
     $finish;
