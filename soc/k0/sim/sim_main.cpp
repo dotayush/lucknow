@@ -3,8 +3,8 @@
 //   +image=<file>[@<hex address>]   binary loaded into ram (repeatable), default address is the ram base
 //   +rx=<file>                      bytes sent to the uart
 //   +rx_delay=<clocks>              clocks before the first received byte (default 20000)
-//   +rx_gap=<bit times>             idle time between received bytes (default 2). the uart has no fifo: give
-//                                   the kernel's interrupt handler time, like a person typing
+//   +rx_gap=<bit times>             idle time between received bytes (default 2). the uart's fifo is 16
+//                                   bytes, a longer burst needs the kernel's interrupt handler time
 //   +max_cycles=<n>                 stop after n clocks (default 2e9)
 //   +stop_on=<text>[|<text>...]     stop once the console printed one of the texts
 //   +trace=<file>                   write the pc of every retired instruction (can be big)

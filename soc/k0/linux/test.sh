@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# boots the kernel on the verilator model, types a few commands at the shell and checks the answers.
-# ./linux/build.sh and ./sim/build.sh first. takes a couple of minutes.
+# boots the kernel on the verilator model, types a few commands at the
+# shell and checks the answers. ./linux/build.sh and ./sim/build.sh
+# first. takes a couple of minutes.
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 tmp=$(mktemp -d)
@@ -12,4 +13,4 @@ for want in "Run /init as init process" "init is running in user space" "hello f
 done
 grep -q "Kernel panic" $tmp/out && { echo "FAIL: kernel panic"; fail=1; }
 [ $fail -eq 0 ] && echo "PASS" || { echo "FAIL (log: $tmp/out)"; exit 1; }
-rm -rf $tmp
+rm -f $tmp/in $tmp/out; rmdir $tmp
