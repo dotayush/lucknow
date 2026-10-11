@@ -74,22 +74,27 @@ IMAGE=Image ./linux/shell.sh         # the small init and its shell instead
 `sim/obj/Vsoc` options: `+image=file[@hexaddr]` (repeatable), `+rx=file`, `+rx_delay`, `+rx_gap`,
 `+interactive`, `+max_cycles`, `+stop_on=a|b`, `+trace=file` (pc of every retired instruction).
 
-### Reference run on QEMU
+### Run on QEMU (fast, and the reference)
 
 ```
-QEMU=<dir with qemu-system-riscv32> QEMU_DATA=<share/qemu dir> ./linux/qemu.sh
+./linux/qemu-fetch.sh          # once, only if qemu-system-riscv32 is not installed and you have no root
+./linux/qemu.sh                # busybox in this terminal. Ctrl-a x quits
+WINDOW=1 ./linux/qemu.sh       # the console in a GTK window
+IMAGE=Image ./linux/qemu.sh    # the small shell instead
 ```
 
-Without root, `apt-get download qemu-system-riscv qemu-system-common qemu-system-data` and
-`dpkg -x` each into one directory works (what was done here). QEMU makes its own device tree. Command
-output is identical to the model's; the boot log differs (timestamps, `base_baud`, the PLIC size) because
-the hardware description does.
+It boots in a second or two, against about a minute and a half on the model, and runs the same kernel image
+(k0 copies QEMU's `virt` memory map). `qemu.sh` takes the emulator from `PATH`, else from `$WORK/qemu-deb`
+where `qemu-fetch.sh` unpacks the Debian packages. `QEMU=`, `QEMU_DATA=` and `QEMU_MODULES=` override it.
 
+QEMU makes its own device tree, so the boot log differs from the model's (timestamps, `base_baud`, the PLIC
+size); the commands' output is the same. Typed input from a pipe needs a pause so it arrives after the
+prompt: `(sleep 8; echo uname -m; sleep 3) | ./linux/qemu.sh`. `hpmstat` says the counters are not readable
+there: QEMU resets `mcounteren` to 0 and has no event counters beyond the three standard ones.
 
-`WINDOW=1 ./linux/qemu.sh` opens the console in QEMU's own GTK window instead of the terminal. It needs the
-`ui-gtk.so` module (Debian `qemu-system-gui`, unpacked like the others; point `QEMU_MODULES=` at its
-directory) and a `$DISPLAY`. The kernel has no framebuffer driver, so the window is the same serial text
-console the model's uart carries, not graphics.
+`WINDOW=1` needs the `ui-gtk.so` module (Debian `qemu-system-gui`, which `qemu-fetch.sh` also unpacks) and a
+`$DISPLAY`. The kernel has no framebuffer driver, so the window is the same serial text console the model's
+uart carries, not graphics.
 
 ### Performance counters from the shell
 
@@ -133,14 +138,24 @@ tree) and compares the program counter of every instruction. `N=4000000 ./linux/
 
 ## How long it takes
 
-| step | clocks | Verilator time |
-|---|---|---|
-| to the small shell | about 29 million | about 20 s |
-| to the busybox prompt | about 92 million | about 1 minute |
-| one typed line of 10 characters | about 25 thousand | instant |
+| step | clocks | model | QEMU |
+|---|---|---|---|
+| to the small shell | about 29 million | about 25 s | under a second |
+| to the busybox prompt | about 100 million | about 1.5 minutes | 1 to 2 s |
+| `hpmstat ls /` | about 2 million | a couple of seconds | instant |
 
-The model retires about 1.7 million instructions per second. The uart is 256 clocks per bit, so a
-character takes about 2560 clocks on the line.
+The model retires about 1 to 1.2 million instructions per second. Measured on the busybox boot:
+
+- Compiler and Verilator options (`-march=native`, `--x-assign fast`) buy about 10 %, not worth the loss of
+  a portable binary.
+- RAM size makes no difference (4 MiB or 16 MiB run at the same speed), and a faster uart
+  (`CPB=16`) does not shorten the boot either: it is about 100 million instructions of kernel work
+  (memory setup, the initramfs unpack, driver probing) and every one of them is simulated.
+- A profile shows the time in Verilator's evaluation of the clocked and the combinational logic of the whole
+  soc, three or so passes per clock. Getting much faster means changing the RTL (smaller always blocks, fewer
+  loops over arrays) or simulating less, for example booting once and saving the state. Neither is done.
+
+Use QEMU for day to day work and the model when the question is about the core itself.
 
 ## Findings (things that were not obvious)
 
