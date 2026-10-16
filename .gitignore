@@ -10,3 +10,4 @@
 *.pdf
 /soc/k0/sim/obj
 /soc/k0/linux/out
+/docs/tool_paths.md
