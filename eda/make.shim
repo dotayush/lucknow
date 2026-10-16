@@ -1,0 +1,5 @@
+#!/bin/bash
+# make that always uses bash. wulffern's makefiles write tcl with `echo -e`, which dash (debian's /bin/sh)
+# prints literally, so drc/lvs/gds fail or, worse, report a false DRC FAIL.
+# SHELL on the command line wins over the makefile and is passed on to sub-makes.
+exec /usr/bin/make SHELL=/bin/bash "$@"
