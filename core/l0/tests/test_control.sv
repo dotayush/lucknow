@@ -89,9 +89,9 @@ module test_control;
       test_failed = 1;
       $display("[%0t] error: pc expected to spin at 0x20, got=0x%08x", $time, dut.pc);
     end
-    if (dut.csrfile_inst.csr_array[isa_shared::CSR_MCAUSE] !== 32'd0) begin
+    if (dut.csrfile_inst.mcause !== 32'd0) begin
       test_failed = 1;
-      $display("[%0t] error: unexpected trap, mcause=0x%08x", $time, dut.csrfile_inst.csr_array[isa_shared::CSR_MCAUSE]);
+      $display("[%0t] error: unexpected trap, mcause=0x%08x", $time, dut.csrfile_inst.mcause);
     end
 
     finish;

@@ -633,8 +633,7 @@ module control #(
   );
 
   csrfile #(
-    .DATA_WIDTH(DATA_WIDTH),
-    .COUNT(4096)
+    .DATA_WIDTH(DATA_WIDTH)
   ) csrfile_inst (
     .clk(clk),
     .rst_n(rst_n),

@@ -51,9 +51,8 @@ control unit. It is not a system: it has no bus, no peripherals and no interrupt
 
 **CSRs**
 
-The CSR file is a flat 4096-entry array, so *any* CSR address reads and writes like plain
-storage, including ones with no behaviour (for example `mscratch`, `mcounteren`, `pmpaddr*`).
-These have behaviour:
+Only the CSRs below exist, each as a named register in `csrfile.sv`. Any other address reads 0 and ignores writes,
+without trapping.
 
 | CSR | address | notes |
 |---|---|---|
@@ -61,8 +60,11 @@ These have behaviour:
 | `misa` | 0x301 | `0x40000100`: 32-bit, RV32I. Read only |
 | `mie` / `mip` | 0x304 / 0x344 | plain storage, nothing drives or reads them |
 | `mtvec` | 0x305 | handler base |
+| `mcounteren` | 0x306 | plain storage |
+| `mscratch` | 0x340 | plain storage |
 | `mepc` `mcause` `mtval` | 0x341 0x342 0x343 | written by traps |
-| `mcycle` | 0xB00 | 32-bit, +1 per clock. No `mcycleh`, no `minstret` |
+| `pmpaddr0` | 0x3B0 | plain storage, no protection (the riscv-tests `pmpaddr` test reads it back) |
+| `mcycle` | 0xB00 | 32-bit, +1 per clock, a write to it is overridden by the increment. No `mcycleh`, no `minstret` |
 | `mvendorid` `marchid` `mimpid` `mhartid` | 0xF11..0xF14 | read only, all zero |
 
 Writes to read-only CSRs are silently dropped (no illegal-instruction trap).
@@ -91,7 +93,7 @@ picks the trap and drives write enables. `pc` is the only state it holds itself.
 | `src/alu.sv` | add, sub, xor/or/and, signed and unsigned compare, shifts. Flags `zero carry overflow` exist but nothing consumes them |
 | `src/regfile.sv` | 32 registers, two read ports (combinational), one write port, `x0` never written |
 | `src/signext.sv` | sign/zero extension for immediates and for sub-word load results |
-| `src/csrfile.sv` | CSR array, trap/`mret` side effects, `mcycle` |
+| `src/csrfile.sv` | the CSRs above, trap/`mret` side effects, `mcycle` |
 | `src/memory.sv` | word array with byte/half/word access, alignment and bounds errors |
 
 ## Memory
