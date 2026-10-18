@@ -92,7 +92,7 @@ picks the trap and drives write enables. `pc` is the only state it holds itself.
 | file | role |
 |---|---|
 | `src/shared.sv` | package `isa_shared`: opcodes, funct codes, ALU ops, CSR addresses, trap causes |
-| `src/control.sv` | `l0_core`, the core. Datapath muxing, next pc, trap selection, no memory |
+| `src/control.sv` | `l0_core`, the core. Datapath muxing, next pc, trap selection, no memory. Loads, stores and `jalr` compute `rs1 + imm` on their own adder, not through the alu |
 | `src/l0.sv` | `control`: `l0_core` plus the two memories, the top the tests use |
 | `src/decoder.sv` | splits an instruction into fields and picks the immediate format |
 | `src/alu.sv` | add, sub, xor/or/and, signed and unsigned compare, shifts. Flags `zero carry overflow` exist but nothing consumes them |
