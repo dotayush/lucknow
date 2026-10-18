@@ -12,7 +12,7 @@ digital designs i've created at the heart of the city of lucknow, india!
   - harvard memory architecture
   - traps follow the privileged spec (ecall, ebreak, illegal instruction, misaligned/out of bounds access)
   - no interrupts, no minstret
-  - passes the official riscv-tests rv32ui suite and the rv32mi tests that apply to it (see below)
+  - passes the official riscv-tests rv32ui suite and the rv32mi tests that apply to it (see [`core/l0/docs/CHIP.md`](./core/l0/docs/CHIP.md))
   - can be used as a design block in systems where a minimal ccu
   (central control unit) is required
   - educational/hobby purpose
@@ -45,109 +45,25 @@ digital designs i've created at the heart of the city of lucknow, india!
     machine csrs, `mret`, `wfi` and counters not in `mcounteren` are illegal in user mode, writing a read only csr
     is illegal; no pmp. `mstatus` has MIE, MPIE and MPP only, `mip` is read only
   - boot rom: `a0` = 0, `a1` = device tree at `0x807F_0000`, jumps to ram
-  - runs a no-mmu Linux 6.12 to a shell, see below
+  - runs a no-mmu Linux 6.12 to a shell, see [`soc/k0/docs/LINUX.md`](./soc/k0/docs/LINUX.md)
   - `soc.sv` wires the core to the bus; unmapped accesses, stores to the rom, non-byte uart accesses and
     non-word clint or plic accesses are access faults
   - passes riscv-tests rv32ui (including `fence_i`), rv32mi (including `illegal` and `instret_overflow`),
     rv32um and rv32ua, also with wait states
   - not done yet: more peripherals, s-mode (and a second plic context) and an mmu
 
-### riscv-tests.
-the cores are checked against the official [riscv-tests](https://github.com/riscv-software-src/riscv-tests) isa suites.
-needs `riscv32-unknown-elf-gcc` (set `TOOLCHAIN` if it isn't in `/opt/riscv32/bin`); the suite is cloned on first use
-into `core/l0/riscv-tests` (ignored by git).
+### tools.
+the open silicon tools (simulation, sky130 analog and digital flows) live in one directory outside the repository.
+`.env` says where; `eda.sh` is the only script that sets them up.
 
 ```bash
-./core/l0/riscv/run.sh            # everything
-./core/l0/riscv/run.sh addi lw    # only some tests
-./soc/k0/riscv/run.sh             # k0, includes rv32um
-
-# k0 with slow memories (2 cycles per fetch, 3 per data access)
-RV_IFLAGS="-Ptest_riscv.FETCH_WAIT=2 -Ptest_riscv.DATA_WAIT=3" ./soc/k0/riscv/run.sh
+cp .env.example .env     # once: set EDA to the tools directory
+./eda.sh                 # menu: install, verify, shell, view, demo
+source eda.sh            # put the tools on PATH in the current shell
 ```
 
-not run, because the feature doesn't exist in the core: `breakpoint` (debug triggers) everywhere; for l0 rv32mi
-`illegal` (interrupts, vectored mtvec) and `instret_overflow` (minstret, they run for k0 through `RV_MI_EXTRA`)
-and rv32ui `fence_i` (no writable instruction memory); `ma_data` (misaligned data access in hardware) is skipped
-everywhere. the a extension tests only exist for k0 (rv32ua, `RV_UA=1`).
-
-bare-metal programs on k0 (builds `programs/<name>.S`, runs it, checks what the uart prints against
-`programs/<name>.expect`, `hello` is the default):
-
-```bash
-./soc/k0/programs/run.sh hello       # uart output
-./soc/k0/programs/run.sh timer       # clint timer and software interrupts, direct and vectored mtvec
-./soc/k0/programs/run.sh irqatomic   # amos interrupted at random points are neither lost nor repeated
-./soc/k0/programs/run.sh uartrx      # bytes typed on the uart (uartrx.input) arrive by plic interrupt, echoed upper case
-
-# with slow memories
-IFLAGS="-Ptest_hello.FETCH_WAIT=2 -Ptest_hello.DATA_WAIT=3" ./soc/k0/programs/run.sh irqatomic
-
-# input bytes back to back (the default leaves 2 bit times between them); with slow memories and no gap the handler
-# can't keep up with a uart in 16450 mode (that program does not enable the fifo), bytes are lost (overrun),
-# which is what the hardware should do
-IFLAGS="-Ptest_hello.RX_GAP=0" ./soc/k0/programs/run.sh uartrx
-```
-
-### linux (no mmu) on k0.
-the plan and its status is in [`soc/k0/docs/PLAN.md`](./soc/k0/docs/PLAN.md). needs the riscv32 toolchain, verilator, `bc`,
-`flex`, `bison`, python3 and a network connection for the first kernel download (~140 MB).
-
-```bash
-./soc/k0/sim/build.sh        # verilator model, 16 MiB ram
-./soc/k0/linux/build.sh      # downloads linux 6.12.112, builds Image, k0.dtb and the init
-./soc/k0/linux/run.sh        # boots to the "k0# " prompt (~30 s)
-./soc/k0/linux/test.sh       # boots, types commands, checks the answers
-# busybox shell with uClibc-ng and several processes (buildroot, 20 to 40 minutes the first time):
-./soc/k0/linux/buildroot/build.sh && ./soc/k0/linux/busybox.sh && ./soc/k0/linux/test_busybox.sh
-./soc/k0/programs/run.sh umode   # user mode, bare metal
-```
-
-### icarus processing.
-> the following requires tools available in the
-> [oss-cad-suite](https://github.com/YosysHQ/oss-cad-suite-build?tab=readme-ov-file#installation)
-
-```bash
-cd ./core/l0
-
-# single module compilation (for example: alu.sv)
-# every module has a matching ./tests/test_<module>.sv, they print "Test passed!" or "Test failed!"
-iverilog -g2012 -o ./tests/results/test_alu.out ./src/shared.sv ./src/alu.sv ./tests/test_alu.sv
-vvp ./tests/results/test_alu.out # generates a ./tests/results/test_alu.vcd file for gtkwave visualization
-
-# top module compilation (control.sv), runs a small program and checks the registers
-iverilog -g2012 -o ./tests/results/test_control.out -c compile.f # compile.f ensures order of compilation is maintained
-vvp ./tests/results/test_control.out # generates a ./tests/results/test_control.vcd file for gtkwave visualization
-```
-
-### yosys processing.
-```bash
-cd ./core/l0
-
-# start yosys
-yosys
-
-# inside yosys terminal
-read -sv ./src/*.sv
-hierarchy -check -top control
-proc # convert design to strcutural repr.
-
-# visualization processing
-write_json ./arch/design.json # write a json netlist (processing by other tools)
-show -format dot -prefix ./arch/design # write a dot for graphviz
-```
-
-### visualization.
-```bash
-cd ./core/l0
-# if you've generated the dot file, you can visualize it with graphviz
-dot -Tsvg ./arch/design.dot -o ./arch/design_dot.svg
-
-# if you've generated a json file, i suggest you to use the pp_json.py
-# first to simplify the module naming before using it with other visualization tools
-python pp_json.py -i ./arch/design.json -o ./arch/pp_design.json
-netlistsvg ./arch/pp_design.json -o ./design.svg # example of json netlist usage with another visualization tool
-```
+what is installed and where: [`TOOLS.md`](./TOOLS.md). the flows (analog, digital, mixed signal) and what was verified:
+[`FLOWS.md`](./FLOWS.md). the l0 place and route runs: [`core/l0/librelane/RUNS.md`](./core/l0/librelane/RUNS.md).
 
 ### license.
 

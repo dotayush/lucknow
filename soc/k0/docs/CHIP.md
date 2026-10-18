@@ -206,11 +206,15 @@ lowest id on a tie. Only the UART is connected (source 10).
 - `tests/test_<module>.sv` per unit (alu, bus, clint, control, csrfile, decoder, memory,
   plic, regfile, signext, uart) plus `test_amo_faults.sv`.
 - `riscv/run.sh`: official riscv-tests rv32ui (including `fence_i`), rv32mi (including
-  `illegal`, `instret_overflow`), rv32um and rv32ua. Works with wait states
-  (`RV_IFLAGS="-Ptest_riscv.FETCH_WAIT=2 -Ptest_riscv.DATA_WAIT=3"`, see README).
+  `illegal`, `instret_overflow`), rv32um and rv32ua (suite cloned into `core/l0/riscv-tests` on first use; needs
+  `riscv32-unknown-elf-gcc`, `source eda.sh` puts it on `PATH`). Works with wait states, 2 cycles per fetch and 3 per data access:
+  `RV_IFLAGS="-Ptest_riscv.FETCH_WAIT=2 -Ptest_riscv.DATA_WAIT=3" ./riscv/run.sh`.
 - `programs/run.sh <name>`: bare-metal assembly programs run through the uart, output compared with `<name>.expect`:
-  `hello`, `timer` (CLINT interrupts, direct and vectored), `irqatomic` (AMOs hit by
-  interrupts are neither lost nor repeated), `uartrx` (typed bytes arrive by PLIC interrupt).
+  `hello` (the default), `timer` (CLINT interrupts, direct and vectored), `irqatomic` (AMOs hit by
+  interrupts are neither lost nor repeated), `uartrx` (typed bytes arrive by PLIC interrupt, echoed upper case), `umode`.
+  Slow memories: `IFLAGS="-Ptest_hello.FETCH_WAIT=2 -Ptest_hello.DATA_WAIT=3" ./programs/run.sh irqatomic`. The uart input follows
+  with 2 bit times between bytes; `IFLAGS="-Ptest_hello.RX_GAP=0"` sends them back to back, and with slow memories the handler can't
+  keep up with a uart in 16450 mode (that program does not enable the fifo): bytes are lost (overrun), which is what the hardware should do.
 - Not run: `breakpoint` (debug triggers) and `ma_data` (hardware misaligned access).
 
 ## Performance counters (Zihpm)

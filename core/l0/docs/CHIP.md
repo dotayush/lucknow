@@ -136,7 +136,12 @@ memories on reset.
 
 - `tests/test_<module>.sv` for every module (print `Test passed!` / `Test failed!`), and
   `test_control.sv`, which runs a small program and checks the registers.
-- `riscv/run.sh` builds and runs the official riscv-tests: every rv32ui test except `fence_i`
+  From `core/l0` (`source eda.sh` provides iverilog): `iverilog -g2012 -o tests/results/test_alu.out src/shared.sv src/alu.sv tests/test_alu.sv && vvp tests/results/test_alu.out`;
+  the top level test is `iverilog -g2012 -o tests/results/test_control.out -c compile.f && vvp tests/results/test_control.out`
+  (`compile.f` keeps the compile order; `vvp` also writes a `.vcd` for gtkwave).
+- `riscv/run.sh` builds and runs the official [riscv-tests](https://github.com/riscv-software-src/riscv-tests) (cloned on first use
+  into `core/l0/riscv-tests`, ignored by git; needs `riscv32-unknown-elf-gcc`, `source eda.sh` puts it on `PATH`, `TOOLCHAIN` is the
+  prefix the script uses). `./riscv/run.sh` runs everything, `./riscv/run.sh addi lw` some tests: every rv32ui test except `fence_i`
   and `ma_data`, and the rv32mi tests `csr mcsr scall sbreak shamt ma_addr ma_fetch
   lh/lw/sh/sw-misaligned zicntr pmpaddr`. Pass is a `1` written to `tohost`.
 - Not run, because the feature is absent: `breakpoint` (debug triggers), `illegal`
