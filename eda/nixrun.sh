@@ -9,7 +9,7 @@ args=(--unshare-user --die-with-parent --tmpfs /)
 for d in /usr /bin /sbin /lib /lib64 /etc /opt /var /run /home /media /mnt /srv; do
   [ -e "$d" ] && args+=(--bind "$d" "$d")
 done
-args+=(--unsetenv LD_LIBRARY_PATH --unsetenv LD_PRELOAD --bind "$STORE" /nix/store --dev-bind /dev /dev --proc /proc --bind /sys /sys --bind /tmp /tmp)
+args+=(--unsetenv LD_LIBRARY_PATH --unsetenv LD_PRELOAD ${NIXRUN_GL:+--setenv LD_LIBRARY_PATH "$EDA/tools/glhost" --setenv __GLX_VENDOR_LIBRARY_NAME nvidia} --bind "$STORE" /nix/store --dev-bind /dev /dev --proc /proc --bind /sys /sys --bind /tmp /tmp)
 # image env: PATH with every tool, python path, certs. HOME stays yours.
 while IFS= read -r l; do
   case $l in PATH=*) args+=(--setenv PATH "${l#PATH=}:/usr/bin:/bin");; esac
