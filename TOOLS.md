@@ -24,10 +24,9 @@ source eda.sh        # environment (PATH, PDK_ROOT, AICEX, ...)
 | RISC-V bare metal toolchain (gcc 15.1.0, rv32im, ilp32, newlib), 2.4 GB | `$EDA/riscv32` |
 | scratch for runs and checks (one new directory per run, never reused) | `$EDA/scratch` |
 
-Older builds, kept only to reproduce old results (not made by `install`; see `FLOWS.md`): `$EDA/pdk-2022`
-(2022-11-25), `$EDA/pdk-2022-12` (2022-12-11), `$EDA/pdk-2026-04` (2026-04-27), the same `ciel/sky130/versions/<hash>`
-layout; `$EDA/tools-ngspice45`, `$EDA/tools-ngspice39` (ngspice 45.2 and 39; put `bin` first on `PATH` for one run; 39 has no
-xspice or cider); `$EDA/tools-magic-master` (8.3.685, for comparing extraction only).
+Other PDK families install next to the first under `$EDA/pdk/ciel/` (see The PDK below). Older PDK builds, ngspice 39 and 45.2
+and magic master were used once to investigate stale reference numbers (`FLOWS.md`) and are not kept; rebuild them with
+`ciel enable --pdk-root <dir> <hash>` or from the git tags if needed.
 
 ## Tools
 
