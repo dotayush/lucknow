@@ -163,22 +163,12 @@ done
 
 echo "== repo l0 rtl commands from the docs"
 cd "$HERE/../core/l0"
-L="src/shared.sv src/signext.sv src/alu.sv src/decoder.sv src/regfile.sv src/csrfile.sv src/memory.sv src/control.sv"
-chk "verilator lint l0 control" verilator --lint-only -Wall -Wno-fatal $L --top-module control
+L="src/shared.sv src/signext.sv src/alu.sv src/decoder.sv src/regfile.sv src/csrfile.sv src/memory.sv src/control.sv src/l0.sv"
 LC="src/shared.sv src/signext.sv src/alu.sv src/decoder.sv src/regfile.sv src/csrfile.sv src/control.sv"
-# memory.sv cannot go through yosys (initial zero loop + $readmemh = "Conflicting initialization values"), so it is a blackbox here
-chk "yosys elaborates l0 core with memory.sv as blackbox" yosys -q -p "read_verilog -sv src/shared.sv; read_verilog -lib -sv src/memory.sv; read_verilog -sv ${LC#src/shared.sv }; hierarchy -top control; proc; check"
-mkdir -p "$S/mem"
-cat > "$S/mem/top.sv" <<'SV'
-module top(input wire clk, input wire rst_n, input wire mem_write, input wire mem_read, input wire [1:0] t, input wire [31:0] a, input wire [31:0] d, output wire [31:0] q, output wire [1:0] e);
-  memory #(.MEM_INIT("./memory/test_rom.hex")) m(.clk(clk), .rst_n(rst_n), .mem_write(mem_write), .mem_read(mem_read), .mem_access_type(t), .addr(a), .data_in(d), .data_out(q), .mem_error(e));
-endmodule
-SV
-sed 's/MEM_INIT("[^"]*")/MEM_INIT("")/' "$S/mem/top.sv" > "$S/mem/top_noimg.sv"
-chk "yosys accepts memory.sv without an init image" yosys -q -p "read_verilog -sv src/shared.sv src/memory.sv $S/mem/top_noimg.sv; hierarchy -top top; proc"
-chk "yosys rejects memory.sv with an init image (known blocker)" bash -c "! yosys -q -p 'read_verilog -sv src/shared.sv src/memory.sv $S/mem/top.sv; hierarchy -top top; proc' >/dev/null 2>&1"
-# premise of the l0 plan: control has no bus, only clk and rst_n, so synthesis of it alone is empty
-chk "l0 control ports are only clk and rst_n (needs a wrapper before P&R)" bash -c "yosys -q -p 'read_verilog -sv $L; hierarchy -top control; tee -o /dev/stdout select -list-ports -count control' ; awk '/^module control/,/\\);/' src/control.sv | grep -cE '^ *(input|output|inout) ' | grep -qx 2"
+chk "verilator lint l0 (control, with its memories)" verilator --lint-only -Wall -Wno-fatal $L --top-module control
+# yosys' own SystemVerilog reader drops `import isa_shared::*` and gives wrong counts: the slang front end is needed
+chk "yosys with slang synthesizes l0_core" yosys -q -p "plugin -i slang; read_slang --top l0_core $LC; synth -top l0_core"
+chk "l0_core has the memory ports (imem_*, dmem_*)" bash -c "awk '/^module l0_core/,/\\);/' src/control.sv | grep -cE '^ *(input|output) ' | grep -qx 12"
 cd "$HERE"
 
 echo

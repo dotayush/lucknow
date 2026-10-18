@@ -108,26 +108,28 @@ around `nixrun`. Any other tool from that store: `nixrun yosys ...`, `nixrun mag
 # toolchain check **[verified, native, no terminal needed]**: full flow on a tiny design, ends with "Smoke test passed."
 librelane --pdk-root $LIBRELANE_PDK_ROOT --smoke-test
 
-# RTL checks before physical design **[verified: lint, elaboration; synthesis blocked on the wrapper]**
-# from core/l0: shared.sv signext alu decoder regfile csrfile memory control
-verilator --lint-only -Wall -Wno-fatal <those files> --top-module control
-# yosys, from core/l0: the core elaborates with memory.sv read as a blackbox (read_verilog -lib).
-# memory.sv fails in yosys when given an init image, as `control` does ("Conflicting initialization values":
-# the zeroing loop plus $readmemh in one initial); without an image it is accepted,
-# and `control` has only clk and rst_n, so a synth/area number means nothing until a wrapper with ports exists.
+# RTL checks before physical design **[verified]**
+# from core/l0: shared.sv signext alu decoder regfile csrfile control (l0_core, no memory); l0.sv adds the memories for simulation
+verilator --lint-only -Wall -Wno-fatal <those files plus memory.sv l0.sv> --top-module control
+# yosys needs the slang front end: its own reader drops `import isa_shared::*` and gives wrong counts
+yosys -p "plugin -i slang; read_slang --top l0_core <those files>; synth -top l0_core"
 
-# the real run **[untested: l0 config not written yet]**
-librelane --pdk-root $LIBRELANE_PDK_ROOT --pdk sky130A \
-          --run-tag l0_try1 core/l0/librelane/config.json
-# results: <design>/runs/l0_try1/final/{gds,lef,def,nl,sdc,metrics.json} and reports for DRC, LVS, antenna, STA
+# the real run **[verified: clean DRC, LVS, antenna and XOR; timing in core/l0/librelane/RUNS.md]**
+core/l0/librelane/run.sh t<N> '{"CLOCK_PERIOD": 44, "DEFAULT_CORNER": "nom_ss_100C_1v60",
+  "PNR_SDC_FILE": "<repo>/core/l0/librelane/l0.sdc", "SIGNOFF_SDC_FILE": "<repo>/core/l0/librelane/l0.sdc"}'
+# results: <run>/final/{gds,lef,def,nl,sdc,metrics.json} and reports for DRC, LVS, antenna, STA
+core/l0/librelane/segments.sh core/l0/librelane/runs/t<N>/final    # delay of each piece of the cycle, from a finished run
+core/l0/librelane/screen.sh <new_dir>                              # preview an RTL change by synthesis alone, about a minute
+eda/view.sh klayout|openroad|magic <file>                          # look at a result; klayout loads the layer names and the 3D view
 ```
 
-Design preparation, in order (see `core/l0/docs/CHIP.md` for why):
+What `core/l0/librelane` holds and why (details: `RUNS.md`, `TIMING.md` there):
 
-1. a top module with external memory ports (no `$readmemh`, no async reset arrays)
-2. a clock constraint (start around 20 MHz, single cycle fetch to writeback is long)
-3. `config.json`: `DESIGN_NAME`, `VERILOG_FILES`, `CLOCK_PORT`, `CLOCK_PERIOD`, die size or utilisation
-4. iterate on the reports until DRC, LVS, antenna and timing are clean
+1. `l0_core` is the top (memories outside, ports for fetch and data). A core with no outputs synthesizes to nothing.
+2. `l0.sdc` replaces the flow's generic constraint (20% of the clock on every port), which hides the real path. It models the memory as an
+   access time and cuts the cycle at the ports.
+3. `config.json`: `DESIGN_NAME`, `VERILOG_FILES`, `CLOCK_PORT`, `CLOCK_PERIOD`, utilisation, and the cells kept out of buffering.
+4. each run is stored on the SSD and linked into `runs/`; once recorded in `RUNS.md` its folder is deleted (about 1.8 GB each).
 
 `soc/k0` is not ready for this: its ram and rom are behavioral arrays that would become thousands of flip-flops.
 
