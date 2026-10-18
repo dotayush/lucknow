@@ -191,7 +191,7 @@ lowest id on a tie. Only the UART is connected (source 10).
 
 | file | role |
 |---|---|
-| `core/control.sv` | the core: datapath, A-extension sequencing, interrupts, stalls, trap selection |
+| `core/control.sv` | the core: datapath, A-extension sequencing, interrupts, stalls, trap selection. Loads, stores and `jalr` compute `rs1 + imm` on their own adder, not through the alu |
 | `core/decoder.sv` `alu.sv` `regfile.sv` `signext.sv` | as in l0; the ALU also does M |
 | `core/csrfile.sv` | CSRs, interrupt pending/enable logic, 64-bit counters |
 | `core/cache.sv` | despite the name, a plain ram/rom array with a second read-only fetch port |

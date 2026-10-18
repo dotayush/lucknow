@@ -89,6 +89,9 @@ module control #(
   reg trap_early; // trap without the taken-branch case: interrupts, decode, fetch and memory errors, jump targets
   reg br_taken; // a conditional branch is taken: the only decision that comes from the late alu compare
   wire [DATA_WIDTH-1:0] br_target = pc + sign_extended_data; // jal and taken branches go here
+  // load and store addresses and the jalr target have their own adder, off the alu's operand and result muxes: the address is
+  // the longest thing between the instruction and the memory. atomics address memory with rs1 alone
+  wire [DATA_WIDTH-1:0] addr_sum = rs1_data + sign_extended_data;
   reg trap_interrupt;
   reg [3:0] trap_cause;
   reg [DATA_WIDTH-1:0] trap_value;
@@ -298,10 +301,7 @@ module control #(
     end
     else if (!reg_write && dec_mem_write && !dec_mem_read) begin
       // STORE operations => data_memory[rs1_data + sign_extend(immediate)] = sign_extended(rs2_data);
-      l_alu_op = ALU_ADD;
-      l_alu_a = rs1_data; // rs1 is set by decoder, so rs1_data = register_mem[rs1]
-      l_alu_b = sign_extended_data;
-      l_addr = alu_result; // memory_address = l_alu_a + l_alu_b
+      l_addr = addr_sum; // memory_address = rs1_data + sign_extend(immediate)
 
       case (f3)
         S_SW: begin
@@ -331,11 +331,8 @@ module control #(
           inst_next_pc = br_target;
         end
         JALR: begin
-          l_alu_op = ALU_ADD;
-          l_alu_a = rs1_data;
-          l_alu_b = sign_extended_data;
           rd_data = pc + 4;
-          inst_next_pc = alu_result & ~32'd1; // JALR requires the least significant bit to be zero
+          inst_next_pc = addr_sum & ~32'd1; // JALR requires the least significant bit to be zero
         end
         REGISTER_IMM: begin
           case (f3)
@@ -525,10 +522,7 @@ module control #(
     end
     else if (reg_write && !dec_mem_write && dec_mem_read) begin
       // LOAD operations => rd_data = data_memory[rs1_data + sign_extended(immediate)];
-      l_alu_op = ALU_ADD;
-      l_alu_a = rs1_data; // rs1 is set by decoeder, so rs1_data = register_mem[rs1]
-      l_alu_b = sign_extended_data; //
-      l_addr = alu_result; // memory_address = l_alu_a + l_alu_b
+      l_addr = addr_sum; // memory_address = rs1_data + sign_extend(immediate)
 
       case (f3)
         I_LW: begin
