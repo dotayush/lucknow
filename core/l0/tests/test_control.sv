@@ -46,9 +46,9 @@ module test_control;
 
   task expect_reg(input integer index, input [31:0] expected);
     begin
-      if (dut.regfile_inst.regs[index] !== expected) begin
+      if (dut.core_inst.regfile_inst.regs[index] !== expected) begin
         test_failed = 1;
-        $display("[%0t] error: x%0d expected=0x%08x, got=0x%08x", $time, index, expected, dut.regfile_inst.regs[index]);
+        $display("[%0t] error: x%0d expected=0x%08x, got=0x%08x", $time, index, expected, dut.core_inst.regfile_inst.regs[index]);
       end else begin
         $display("[%0t] OK: x%0d=0x%08x", $time, index, expected);
       end
@@ -85,13 +85,13 @@ module test_control;
       test_failed = 1;
       $display("[%0t] error: data memory[0] expected=0x0000000c, got=0x%08x", $time, dut.data_memory_inst.mem[0]);
     end
-    if (dut.pc !== 32'h20) begin
+    if (dut.core_inst.pc !== 32'h20) begin
       test_failed = 1;
-      $display("[%0t] error: pc expected to spin at 0x20, got=0x%08x", $time, dut.pc);
+      $display("[%0t] error: pc expected to spin at 0x20, got=0x%08x", $time, dut.core_inst.pc);
     end
-    if (dut.csrfile_inst.mcause !== 32'd0) begin
+    if (dut.core_inst.csrfile_inst.mcause !== 32'd0) begin
       test_failed = 1;
-      $display("[%0t] error: unexpected trap, mcause=0x%08x", $time, dut.csrfile_inst.mcause);
+      $display("[%0t] error: unexpected trap, mcause=0x%08x", $time, dut.core_inst.csrfile_inst.mcause);
     end
 
     finish;

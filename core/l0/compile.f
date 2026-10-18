@@ -2,6 +2,7 @@
 ./src/signext.sv
 ./src/alu.sv
 ./src/control.sv
+./src/l0.sv
 ./src/decoder.sv
 ./src/memory.sv
 ./src/regfile.sv

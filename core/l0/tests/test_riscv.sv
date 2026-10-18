@@ -51,7 +51,7 @@ module test_riscv;
         $finish;
       end
       if (cycles >= MAX_CYCLES) begin
-        $display("FAIL: timeout after %0d cycles, pc=0x%08x", cycles, dut.pc);
+        $display("FAIL: timeout after %0d cycles, pc=0x%08x", cycles, dut.core_inst.pc);
         $finish;
       end
     end

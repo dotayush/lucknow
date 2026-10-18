@@ -3,20 +3,35 @@
   import isa_shared::*;
 `endif
 
-module control #(
-  parameter DATA_WIDTH = 32,
-  parameter WORDS = 64,
-  parameter IMEM_INIT = "./memory/test_rom.hex", // program image loaded into instruction memory
-  parameter DMEM_INIT = "" // optional image preloaded into data memory
+// the l0 core without memories: instruction fetch, data access and their error codes go through ports,
+// so it can be dropped into a design that owns the memory (an sram, a bus, a testbench).
+// memory answers in the same cycle (combinational read); a write lands on the clock edge.
+// `control` in l0.sv is this core plus the two memories of memory.sv.
+module l0_core #(
+  parameter DATA_WIDTH = 32
 ) (
     input wire clk,
-    input wire rst_n
+    input wire rst_n,
+
+    // instruction fetch: always a word read at pc
+    output wire [DATA_WIDTH-1:0] imem_addr,
+    input  wire [DATA_WIDTH-1:0] imem_data,
+    input  wire [1:0]            imem_err,   // isa_shared NO_MEM_ERROR / OUT_OF_BOUNDS / ADDRESS_MISALIGNED
+
+    // data access: a load, or a store with the byte/half/word size in dmem_size
+    output wire [DATA_WIDTH-1:0] dmem_addr,
+    output wire [DATA_WIDTH-1:0] dmem_wdata,
+    output wire [1:0]            dmem_size,  // isa_shared BYTE / HALF / WORD_MEM_ACCESS
+    output wire                  dmem_read,
+    output wire                  dmem_write, // never set for a reserved store width
+    input  wire [DATA_WIDTH-1:0] dmem_rdata, // the addressed lane, zero-extended, like memory.sv
+    input  wire [1:0]            dmem_err
 );
 
   // central
   reg [DATA_WIDTH-1:0] pc;
   reg [DATA_WIDTH-1:0] next_pc; // combinational, registered into pc at the clock edge
-  wire [DATA_WIDTH-1:0] instruction;
+  wire [DATA_WIDTH-1:0] instruction = imem_data;
 
   logic [DATA_WIDTH-1:0] alu_a;
   reg [DATA_WIDTH-1:0] alu_b;
@@ -41,9 +56,9 @@ module control #(
   reg [1:0] mem_access_type;
   reg [DATA_WIDTH-1:0] addr;
   reg [DATA_WIDTH-1:0] data_in;
-  wire [DATA_WIDTH-1:0] data_out;
-  wire [1:0] mem_error;
-  wire [1:0] fetch_error;
+  wire [DATA_WIDTH-1:0] data_out = dmem_rdata;
+  wire [1:0] mem_error = dmem_err;
+  wire [1:0] fetch_error = imem_err;
 
   wire [DATA_WIDTH-1:0] rs1_data;
   wire [DATA_WIDTH-1:0] rs2_data;
@@ -565,39 +580,12 @@ module control #(
     .csr_addr(csr_addr)
   );
 
-  // data memory (ram)
-  memory #(
-    .DATA_WIDTH(DATA_WIDTH),
-    .MEM_INIT(DMEM_INIT),
-    .WORDS(WORDS)
-  ) data_memory_inst (
-    .clk(clk),
-    .rst_n(rst_n),
-    .addr(addr),
-    .data_in(data_in),
-    .mem_read(mem_read),
-    .mem_write(mem_write && !illegal_store),
-    .data_out(data_out),
-    .mem_access_type(mem_access_type), // Use the access type from decoder
-    .mem_error(mem_error)
-  );
-
-  // instruction memory (rom)
-  memory #(
-    .DATA_WIDTH(DATA_WIDTH),
-    .MEM_INIT(IMEM_INIT),
-    .WORDS(WORDS)
-  ) instruction_memory_inst (
-    .clk(clk),
-    .rst_n(rst_n),
-    .addr(pc),
-    .data_in(0), // No write to instruction memory
-    .mem_read('1), // Always read from instruction memory
-    .mem_write('0), // No write to instruction memory
-    .data_out(instruction),
-    .mem_access_type(isa_shared::WORD_MEM_ACCESS),
-    .mem_error(fetch_error)
-  );
+  assign imem_addr = pc;
+  assign dmem_addr = addr;
+  assign dmem_wdata = data_in;
+  assign dmem_size = mem_access_type;
+  assign dmem_read = mem_read;
+  assign dmem_write = mem_write && !illegal_store;
 
   // register file
   regfile #(

@@ -88,7 +88,8 @@ picks the trap and drives write enables. `pc` is the only state it holds itself.
 | file | role |
 |---|---|
 | `src/shared.sv` | package `isa_shared`: opcodes, funct codes, ALU ops, CSR addresses, trap causes |
-| `src/control.sv` | top. Datapath muxing, next pc, trap selection |
+| `src/control.sv` | `l0_core`, the core. Datapath muxing, next pc, trap selection, no memory |
+| `src/l0.sv` | `control`: `l0_core` plus the two memories, the top the tests use |
 | `src/decoder.sv` | splits an instruction into fields and picks the immediate format |
 | `src/alu.sv` | add, sub, xor/or/and, signed and unsigned compare, shifts. Flags `zero carry overflow` exist but nothing consumes them |
 | `src/regfile.sv` | 32 registers, two read ports (combinational), one write port, `x0` never written |
@@ -110,9 +111,22 @@ picks the trap and drives write enables. `pc` is the only state it holds itself.
 
 ## Interface
 
-`control` is the whole core: `clk`, `rst_n` (asynchronous, active low) and the parameters
-`DATA_WIDTH`, `WORDS`, `IMEM_INIT`, `DMEM_INIT`. The memories are inside it, there are no
-external ports. Reset puts pc at 0, clears registers and CSRs and reloads both memories.
+`l0_core` (`src/control.sv`) is the core without memories, so it can be dropped into a design that owns the memory:
+
+| ports | direction | meaning |
+|---|---|---|
+| `clk`, `rst_n` | in | clock, asynchronous active low reset. Reset puts pc at 0 and clears registers and CSRs |
+| `imem_addr` | out | instruction address, always `pc` |
+| `imem_data`, `imem_err` | in | the instruction word and its error code (`NO_MEM_ERROR`, `OUT_OF_BOUNDS`, `ADDRESS_MISALIGNED` from `isa_shared`) |
+| `dmem_addr`, `dmem_wdata` | out | data address and store data |
+| `dmem_size`, `dmem_read`, `dmem_write` | out | byte, half or word access, and which one. `dmem_write` is never set for a reserved store width |
+| `dmem_rdata`, `dmem_err` | in | the addressed lane zero-extended, like `memory.sv`, and the error code |
+
+The memory has to answer in the same cycle (combinational read); a write lands on the clock edge.
+
+`control` (`src/l0.sv`) is `l0_core` plus the two memories of `memory.sv`, with the parameters `DATA_WIDTH`, `WORDS`,
+`IMEM_INIT`, `DMEM_INIT` and only `clk` and `rst_n` as ports. The tests and the simulation use it. It also reloads both
+memories on reset.
 
 ## Verification
 
