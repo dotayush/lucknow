@@ -65,19 +65,20 @@ After them, everything is serial: `taken` from the ALU compare, then the trap ch
 
 Segments (`segments.sh`, slow corner, extracted wires, no I/O delays), before and after splitting the trap (`t17` to `t18`):
 
-| segment | before | after |
-|---|---|---|
-| pc to `imem_addr` | 3.3 | 3.6 |
-| `imem_data` to `dmem_addr`/ctl/`dmem_wdata` | 23.7 | 23.6 |
-| `imem_data` to flop | 35.8 | **29.3** |
-| `dmem_rdata` to flop | 6.8 | 6.8 |
-| flop to `dmem_addr`/ctl/`dmem_wdata` | 19.5 | 17.6 |
-| flop to flop | 31.7 | **23.0** |
+| segment | `t17` before | `t18` after the trap split | `t19` after the address adder |
+|---|---|---|---|
+| pc to `imem_addr` | 3.3 | 3.6 | 3.0 |
+| `imem_data` to `dmem_addr`/ctl/`dmem_wdata` | 23.7 | 23.6 | **21.4** |
+| `imem_data` to flop | 35.8 | **29.3** | 30.1 |
+| `dmem_rdata` to flop | 6.8 | 6.8 | 6.6 |
+| flop to `dmem_addr`/ctl/`dmem_wdata` | 19.5 | 17.6 | 15.5 |
+| flop to flop | 31.7 | **23.0** | 24.8 |
 
 Segment times are not a floor: the resizer stops once a constraint is met, so the same logic is slower under a looser target.
 
-With `T_mem` = 4 ns the chain through memory twice is about 3.6 + 4 + 23.6 + 4 + 6.8 = 42 ns for `t18`'s layout. The limiting segment
-under `l0.sdc` is `imem_data` to `dmem_addr`, which the trap split does not touch: signoff slack at 44 ns stayed at -4.6 ns.
+With `T_mem` = 4 ns the chain through memory twice is about 3.0 + 4 + 21.4 + 4 + 6.6 = 39 ns for `t19`'s layout. The limiting segment
+under `l0.sdc` is `imem_data` to `dmem_addr`: the trap split did not touch it (signoff slack at 44 ns stayed at -4.6 ns), the address adder
+took 2.2 ns off it (-2.4 ns). Its slack falls about 0.5 ns per address bit, so the carry chain of the address adder is the next thing to look at.
 
 ## 4. What the trap split changed
 
@@ -89,9 +90,11 @@ part reaches `next_pc`, `mepc`, `mcause`, `mtval` and `mstatus`, as the last mux
 
 ## 5. What could change the clock next
 
-1. **A dedicated address adder** (`rs1 + imm`) for loads and stores. They send it through the shared ALU, with its operand and
-   op-select muxes in front and the result mux behind; the limiting segment is `imem_data` to `dmem_addr`. *Estimate* a few ns.
-   *Check:* `screen.sh` before and after.
+Done: the trap split (section 4) and the dedicated address adder. Loads, stores and `jalr` used to send `rs1 + imm` through the shared ALU,
+with its operand and op-select muxes in front and the result mux behind; it now has its own adder (`addr_sum` in `control.sv`).
+
+1. **The adder structure.** Synthesis and the resizer only have to meet the clock target, so the carry chain is whatever just meets it; slack on the
+   address bits falls about 0.5 ns per bit. Look at the adder depth in the synthesized netlist first (`screen.sh`), then at `SYNTH_ADDER_TYPE` and the target.
 2. **Memory timing as a design input.** `T_mem` counts twice. A registered memory read removes the fetch from the chain; that needs a
    pipeline stage (l0 documents "no stall mechanism"), so it is a k0-level decision.
 3. **Pipelining** (fetch | decode and register read | execute | memory and write-back) splits the register read and ALU across cycles, at the cost
