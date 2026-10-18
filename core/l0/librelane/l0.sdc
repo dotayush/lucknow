@@ -30,7 +30,7 @@ set_input_delay -clock $clk 0 [get_ports rst_n]
 set_output_delay -clock $clk [expr {$T - $B_PC_OUT}] [get_ports {imem_addr*}]
 set_output_delay -clock $clk [expr {$T_MEM + $B_LOAD}] [get_ports {dmem_addr* dmem_wdata* dmem_size* dmem_read dmem_write}]
 
-set_driving_cell -lib_cell sky130_fd_sc_hd__inv_2 -pin Y [all_inputs -no_clocks]
+set_driving_cell -lib_cell $::env(PDK_DRIVING_CELL) -pin Y [all_inputs -no_clocks]
 set_load 0.05 [all_outputs]
 
 # dmem_rdata also reaches dmem_wdata structurally (the load result and the store data share one sign extender,

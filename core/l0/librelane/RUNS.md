@@ -2,7 +2,7 @@
 
 One row per try that finished or taught something: settings, results, outcome. The model behind the numbers is in
 `TIMING.md`. `results/t<N>.metrics.json` is the flow's final `metrics.json` for each finished run. Run folders are
-about 1.8 GB each, live on the SSD under `scratch/l0-try<N>/runs/t<N>`, are linked as `runs/t<N>` while they exist,
+about 1.8 GB each, live under `$EDA/scratch/l0-try<N>/runs/t<N>`, are linked as `runs/t<N>` while they exist,
 and are deleted once recorded here (`run.sh` starts a run, `segments.sh` measures one, `screen.sh` previews an RTL change).
 
 Common to every run: design `l0_core`, sky130A, `sky130_fd_sc_hd`, LibreLane 3.0.16, full flow, flip-flops 1408
@@ -102,9 +102,10 @@ Path segments, slow corner, extracted wires, no I/O delays (`segments.sh`):
 
 ## Reproducing
 
+`run.sh` fills in the slow corner, the delay cell exclusions and `l0.sdc` from the PDK in `.env`. Tries t3 to t11 used the flow's fallback SDC; `run.sh` no longer starts such a run.
+
 ```bash
 core/l0/librelane/screen.sh <new_dir>                 # preview an RTL change, about a minute
-core/l0/librelane/run.sh t<N> '{"CLOCK_PERIOD": 44, "DEFAULT_CORNER": "nom_ss_100C_1v60",
-  "PNR_SDC_FILE": "<repo>/core/l0/librelane/l0.sdc", "SIGNOFF_SDC_FILE": "<repo>/core/l0/librelane/l0.sdc"}'
+core/l0/librelane/run.sh t<N> '{"CLOCK_PERIOD": 44}'   # slow corner, delay cells and l0.sdc come from run.sh and .env (PDK_FAMILY)
 core/l0/librelane/segments.sh core/l0/librelane/runs/t<N>/final
 ```

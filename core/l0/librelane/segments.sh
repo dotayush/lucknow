@@ -1,17 +1,17 @@
 #!/bin/bash
-# segments.sh <run>/final [corner]   e.g. segments.sh runs/t9/final max_ss_100C_1v60
+# segments.sh <run>/final [corner]   e.g. segments.sh runs/t9/final max_ss_100C_1v60   (default: max_ + the slow corner of the PDK in .env)
 # the delay of each piece of the l0_core cycle, taken from a finished run: its database, the
 # standard cell liberty of the corner and the extracted wires, with no input or output delays.
 # a clock period has to cover  pc->imem_addr + memory + imem_data->dmem_addr + memory + dmem_rdata->flop.
 # (the generic 20% I/O delay of the flow hides this, see RUNS.md.)
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
-source "$HERE/../../../eda/env.sh"
-final=$(readlink -f "$1"); corner=${2:-max_ss_100C_1v60}
+source "$HERE/../../../eda.sh"
+final=$(readlink -f "$1"); corner=${2:-max_$PDK_SLOW}
 pvt=${corner#*_}; rc=${corner%%_*}
 tcl=$(mktemp "${TMPDIR:-/tmp}/segments-XXXXXX.tcl")
 cat > "$tcl" <<TCL
-read_liberty $PDK_ROOT/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__$pvt.lib
+read_liberty $PDK_ROOT/$PDK_DIGITAL/libs.ref/$STD_CELL_LIBRARY/lib/${STD_CELL_LIBRARY}__$pvt.lib
 read_db $final/odb/l0_core.odb
 create_clock -name clk -period 100 [get_ports clk]
 set_propagated_clock [get_clocks clk]

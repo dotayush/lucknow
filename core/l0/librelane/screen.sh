@@ -5,23 +5,25 @@
 # about 1.3x too optimistic against routed wires (TIMING.md); a change is only worth a full run if it moves a segment more than that.
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
-source "$HERE/../../../eda/env.sh"
+source "$HERE/../../../eda.sh"
 dir=$1; src=$(readlink -f "${2:-$HERE/../src}")
 mkdir "$dir"; cd "$dir"
 python3 - "$src" <<'PY'
-import json,sys
+import json,sys,os
 src=sys.argv[1]
 files=['shared','alu','csrfile','decoder','regfile','signext','control']
 json.dump({"DESIGN_NAME":"l0_core","VERILOG_FILES":[f"{src}/{f}.sv" for f in files],"CLOCK_PORT":"clk","CLOCK_PERIOD":44,
-  "EXTRA_EXCLUDED_CELLS":["sky130_fd_sc_hd__clkdlybuf*","sky130_fd_sc_hd__dlymetal*"],"DEFAULT_CORNER":"nom_ss_100C_1v60"},open("config.json","w"),indent=1)
+  "EXTRA_EXCLUDED_CELLS":[os.environ["STD_CELL_LIBRARY"]+"__"+x for x in os.environ.get("PDK_DELAY_CELLS","").split(",") if x],
+  "DEFAULT_CORNER":"nom_"+os.environ["PDK_SLOW"]},open("config.json","w"),indent=1)
 PY
-librelane --pdk-root "$LIBRELANE_PDK_ROOT" --pdk sky130A --run-tag s --to Yosys.Synthesis config.json > run.log 2>&1
-R=$PDK_ROOT/sky130A/libs.ref/sky130_fd_sc_hd
+librelane --pdk-root "$LIBRELANE_PDK_ROOT" --pdk "$PDK_DIGITAL" --run-tag s --to Yosys.Synthesis config.json > run.log 2>&1
+S=$STD_CELL_LIBRARY
+R=$PDK_ROOT/$PDK_DIGITAL/libs.ref/$S
 nl=$(ls runs/s/*yosys-synthesis/l0_core.nl.v)
 cat > seg.tcl <<TCL
-read_lef $R/techlef/sky130_fd_sc_hd__nom.tlef
-read_lef $R/lef/sky130_fd_sc_hd.lef
-read_liberty $R/lib/sky130_fd_sc_hd__ss_100C_1v60.lib
+read_lef $R/techlef/${S}__nom.tlef
+read_lef $R/lef/$S.lef
+read_liberty $R/lib/${S}__$PDK_SLOW.lib
 read_verilog $nl
 link_design l0_core
 create_clock -name clk -period 100 [get_ports clk]
