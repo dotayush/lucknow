@@ -26,6 +26,8 @@ module test_csrfile;
   reg [1:0] csr_op;
 
   reg trap;
+  reg late_trap; // the trap comes from a taken branch, which control.sv keeps out of trap_early
+  wire trap_early = trap && !late_trap;
   reg [3:0] trap_cause;
   reg [31:0] trap_value;
   reg [31:0] trap_pc;
@@ -41,6 +43,7 @@ module test_csrfile;
     .csr_rdata(csr_rdata),
     .csr_op(csr_op),
     .trap(trap),
+    .trap_early(trap_early),
     .trap_cause(trap_cause),
     .trap_value(trap_value),
     .trap_pc(trap_pc),
@@ -55,6 +58,7 @@ module test_csrfile;
     csr_wdata = 0;
     csr_op = 0;
     trap = 0;
+    late_trap = 0;
     trap_cause = 0;
     trap_value = 0;
     trap_pc = 0;
@@ -247,6 +251,34 @@ module test_csrfile;
       $display("[%0t] error: mstatus after second mret expected=0x%08x, got=0x%08x", $time, 32'h00001880, csr_rdata);
     end else begin
       $display("[%0t] OK: mret with MPIE=0 keeps MIE=0, mstatus=0x%08x", $time, csr_rdata);
+    end
+
+    // a trap known late (a taken branch to a misaligned target) records the same state
+    @(negedge clk);
+    csr_op = CSR_NOP;
+    trap_pc = 32'h00000040;
+    trap_cause = 4'd0;
+    trap_value = 32'h00000042;
+    late_trap = 1;
+    trap = 1;
+    @(negedge clk);
+    trap = 0;
+    late_trap = 0;
+    csr_addr = CSR_MEPC;
+    #1;
+    if (csr_rdata !== 32'h00000040) begin
+      test_failed = 1;
+      $display("[%0t] error: mepc after a late trap expected=0x%08x, got=0x%08x", $time, 32'h00000040, csr_rdata);
+    end else begin
+      $display("[%0t] OK: a late trap recorded mepc=0x%08x", $time, csr_rdata);
+    end
+    csr_addr = CSR_MTVAL;
+    #1;
+    if (csr_rdata !== 32'h00000042) begin
+      test_failed = 1;
+      $display("[%0t] error: mtval after a late trap expected=0x%08x, got=0x%08x", $time, 32'h00000042, csr_rdata);
+    end else begin
+      $display("[%0t] OK: a late trap recorded mtval=0x%08x", $time, csr_rdata);
     end
 
     // mcycle counts every clock

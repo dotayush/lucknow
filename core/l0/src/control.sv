@@ -75,6 +75,9 @@ module l0_core #(
   wire [DATA_WIDTH-1:0] csr_rdata;
   reg [1:0] csr_op;
   reg trap;
+  reg trap_early; // trap without the taken-branch case: decode, fetch and memory errors, jump targets
+  reg br_taken; // a conditional branch is taken: the only decision that comes from the late alu compare
+  wire [DATA_WIDTH-1:0] br_target = pc + sign_extended_data; // jal and taken branches go here
   reg [3:0] trap_cause;
   reg [DATA_WIDTH-1:0] trap_value;
   wire [DATA_WIDTH-1:0] trap_vector;
@@ -123,6 +126,7 @@ module l0_core #(
     rd_data = '0;
     l_unextended_data2 = '0;
     inst_next_pc = pc + 4;
+    br_taken = 0;
     csr_op = CSR_NOP;
     csr_wdata = '0;
     mret = 0;
@@ -163,7 +167,7 @@ module l0_core #(
         JAL: begin
           l_alu_op = ALU_ADD;
           rd_data = pc + 4; // JAL writes the next PC value to rd
-          inst_next_pc = pc + sign_extended_data;
+          inst_next_pc = br_target;
         end
         JALR: begin
           l_alu_op = ALU_ADD;
@@ -361,37 +365,37 @@ module l0_core #(
             B_BEQ: begin
               l_alu_op = ALU_EQUALS;
               if (alu_result == 1) begin
-                inst_next_pc = pc + sign_extended_data;
+                br_taken = 1;
               end
             end
             B_BNE: begin
               l_alu_op = ALU_NOT_EQUALS;
               if (alu_result == 1) begin
-                inst_next_pc = pc + sign_extended_data;
+                br_taken = 1;
               end
             end
             B_BLT: begin
               l_alu_op = ALU_LT;
               if (alu_result == 1) begin
-                inst_next_pc = pc + sign_extended_data;
+                br_taken = 1;
               end
             end
             B_BGE: begin
               l_alu_op = ALU_GE;
               if (alu_result == 1) begin
-                inst_next_pc = pc + sign_extended_data;
+                br_taken = 1;
               end
             end
             B_BLTU: begin
               l_alu_op = ALU_LTU;
               if (alu_result == 1) begin
-                inst_next_pc = pc + sign_extended_data;
+                br_taken = 1;
               end
             end
             B_BGEU: begin
               l_alu_op = ALU_GEU;
               if (alu_result == 1) begin
-                inst_next_pc = pc + sign_extended_data;
+                br_taken = 1;
               end
             end
             default: illegal = 1;
@@ -506,45 +510,60 @@ module l0_core #(
 
   // trap selection and the final next pc. kept apart from the block above because mem_error depends
   // on the address that block drives.
-  always @* begin
-    trap = 0;
-    trap_cause = TRAP_NONE;
-    trap_value = '0;
-    next_pc = inst_next_pc;
+  //
+  // the trap is split by when it is known. everything except a taken branch to a misaligned target comes from the
+  // decode, the fetch and memory errors or the low bits of a jump target, which are known early. only the branch
+  // decision (the full width compare in the alu) is late, so it is kept out of what the register file and most
+  // csrs see: trap_early is the trap without it, and a taken branch writes neither a register nor a csr.
+  logic [3:0] cause_early;
+  logic [DATA_WIDTH-1:0] value_early;
+  logic late_misaligned; // taken branch to a target that isn't 4 byte aligned, and nothing else trapped first
 
-    // the first match wins, an instruction can only raise one.
+  always @* begin
+    trap_early = 0;
+    cause_early = TRAP_NONE;
+    value_early = '0;
+
+    // the first match wins, an instruction can only raise one. the misaligned jump or mret target is last,
+    // as it was when branches were part of it.
     if (fetch_error != NO_MEM_ERROR) begin
-      trap = 1;
-      trap_cause = (fetch_error == OUT_OF_BOUNDS) ? TRAP_INST_ACCESS_FAULT : TRAP_INST_ADDR_MISALIGNED;
-      trap_value = pc;
+      trap_early = 1;
+      cause_early = (fetch_error == OUT_OF_BOUNDS) ? TRAP_INST_ACCESS_FAULT : TRAP_INST_ADDR_MISALIGNED;
+      value_early = pc;
     end
     else if (env_trap) begin
-      trap = 1;
-      trap_cause = env_cause;
+      trap_early = 1;
+      cause_early = env_cause;
     end
     else if (illegal) begin
-      trap = 1;
-      trap_cause = TRAP_ILLEGAL_INSTRUCTION;
-      trap_value = instruction;
+      trap_early = 1;
+      cause_early = TRAP_ILLEGAL_INSTRUCTION;
+      value_early = instruction;
     end
     else if (mem_error != NO_MEM_ERROR) begin
-      trap = 1;
-      trap_value = addr;
+      trap_early = 1;
+      value_early = addr;
       if (mem_read) begin
-        trap_cause = (mem_error == OUT_OF_BOUNDS) ? TRAP_LOAD_ACCESS_FAULT : TRAP_LOAD_ADDR_MISALIGNED;
+        cause_early = (mem_error == OUT_OF_BOUNDS) ? TRAP_LOAD_ACCESS_FAULT : TRAP_LOAD_ADDR_MISALIGNED;
       end else begin
-        trap_cause = (mem_error == OUT_OF_BOUNDS) ? TRAP_STORE_ACCESS_FAULT : TRAP_STORE_ADDR_MISALIGNED;
+        cause_early = (mem_error == OUT_OF_BOUNDS) ? TRAP_STORE_ACCESS_FAULT : TRAP_STORE_ADDR_MISALIGNED;
       end
     end
-    else if (inst_next_pc[1:0] != 2'b00) begin // jump, taken branch or mret to a target that isn't 4 byte aligned
-      trap = 1;
-      trap_cause = TRAP_INST_ADDR_MISALIGNED;
-      trap_value = inst_next_pc;
+    else if (inst_next_pc[1:0] != 2'b00) begin // jal, jalr or mret to a target that isn't 4 byte aligned
+      trap_early = 1;
+      cause_early = TRAP_INST_ADDR_MISALIGNED;
+      value_early = inst_next_pc;
     end
 
-    if (trap) begin
-      next_pc = trap_vector;
-    end
+    late_misaligned = !trap_early && br_taken && (br_target[1:0] != 2'b00);
+    trap = trap_early || late_misaligned;
+    trap_cause = late_misaligned ? TRAP_INST_ADDR_MISALIGNED : cause_early;
+    trap_value = late_misaligned ? br_target : value_early;
+
+    // the late decision is the last mux: a taken branch goes to its target, or to the handler when that is misaligned
+    if (trap_early) next_pc = trap_vector;
+    else if (br_taken) next_pc = (br_target[1:0] != 2'b00) ? trap_vector : br_target;
+    else next_pc = inst_next_pc;
   end
 
   // alu
@@ -597,7 +616,7 @@ module l0_core #(
     .rs2(rs2),
     .rs1_data(rs1_data),
     .rs2_data(rs2_data),
-    .reg_write((reg_write || csr_to_rd) && !trap), // a trapping instruction does not retire
+    .reg_write((reg_write || csr_to_rd) && !trap_early), // a trapping instruction does not retire (a taken branch writes nothing)
     .rd(rd),
     .rd_data(rd_data)
   );
@@ -630,6 +649,7 @@ module l0_core #(
     .csr_rdata(csr_rdata),
     .csr_op(csr_op),
     .trap(trap),
+    .trap_early(trap_early),
     .trap_cause(trap_cause),
     .trap_value(trap_value),
     .trap_pc(pc),

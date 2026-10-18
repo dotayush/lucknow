@@ -48,6 +48,10 @@ control unit. It is not a system: it has no bus, no peripherals and no interrupt
   pc = `mtvec` (base only, mode bits ignored, no vectoring).
 - `mret`: pc = `mepc`, `MIE = MPIE`, `MPIE = 1`.
 - Misaligned data accesses are not handled in hardware, they trap (4 / 6).
+- Inside `control.sv` the one trap that follows the branch compare (a taken branch to a target that isn't 4 byte aligned) is kept
+  apart from the others (`trap_early`): the register file and the CSRs a trap does not touch use `trap_early` only, and the late
+  decision reaches only `next_pc` and the trap record (`mepc`, `mcause`, `mtval`, `mstatus`). Behaviour is the same. It shortens
+  the path from instruction to register (`librelane/TIMING.md`).
 
 **CSRs**
 

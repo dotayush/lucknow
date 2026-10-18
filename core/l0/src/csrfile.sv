@@ -20,6 +20,7 @@ module csrfile #(parameter DATA_WIDTH = 32) (
 
     // trap inputs
     input wire trap,
+    input wire trap_early, // trap without the taken-branch case (see control.sv): trap is trap_early or a taken branch to a misaligned target
     input wire [3:0] trap_cause,
     input wire [DATA_WIDTH-1:0] trap_value,
     input wire [DATA_WIDTH-1:0] trap_pc,
@@ -63,19 +64,15 @@ module csrfile #(parameter DATA_WIDTH = 32) (
     endcase
   end
 
+  // what a trap changes: the trap record and mstatus. these see the full `trap`, which for a taken branch to a
+  // misaligned target is known late (it follows the branch compare).
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       mstatus <= 32'h00001800; // MPP = 11 (M-mode), MPIE = 0, MIE = 0
-      mie <= '0;
-      mip <= '0;
-      mtvec <= '0;
-      mscratch <= '0;
       mepc <= '0;
       mcause <= '0;
       mtval <= '0;
       mcycle <= '0;
-      mcounteren <= '0;
-      pmpaddr0 <= '0;
     end
     else begin
       if (trap) begin
@@ -94,19 +91,37 @@ module csrfile #(parameter DATA_WIDTH = 32) (
       else begin
         case (csr_addr)
           CSR_MSTATUS: mstatus <= apply(mstatus);
-          CSR_MIE: mie <= apply(mie);
-          CSR_MIP: mip <= apply(mip);
-          CSR_MTVEC: mtvec <= apply(mtvec);
-          CSR_MSCRATCH: mscratch <= apply(mscratch);
           CSR_MEPC: mepc <= apply(mepc);
           CSR_MCAUSE: mcause <= apply(mcause);
           CSR_MTVAL: mtval <= apply(mtval);
-          CSR_MCOUNTEREN: mcounteren <= apply(mcounteren);
-          CSR_PMPADDR0: pmpaddr0 <= apply(pmpaddr0);
-          default: begin end // read only or not built
+          default: begin end
         endcase
       end
       mcycle <= mcycle + 1; // every clock; a csr write to it is overridden, as before
+    end
+  end
+
+  // the registers a trap does not touch. they are written only by csr instructions, and a late trap (a taken
+  // branch) never comes with one, so their write enable uses trap_early and stays off the late path.
+  always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      mie <= '0;
+      mip <= '0;
+      mtvec <= '0;
+      mscratch <= '0;
+      mcounteren <= '0;
+      pmpaddr0 <= '0;
+    end
+    else if (!trap_early && !mret) begin
+      case (csr_addr)
+        CSR_MIE: mie <= apply(mie);
+        CSR_MIP: mip <= apply(mip);
+        CSR_MTVEC: mtvec <= apply(mtvec);
+        CSR_MSCRATCH: mscratch <= apply(mscratch);
+        CSR_MCOUNTEREN: mcounteren <= apply(mcounteren);
+        CSR_PMPADDR0: pmpaddr0 <= apply(pmpaddr0);
+        default: begin end // read only or not built
+      endcase
     end
   end
 
