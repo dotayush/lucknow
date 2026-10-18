@@ -864,7 +864,6 @@ module control #(
 
   csrfile #(
     .DATA_WIDTH(DATA_WIDTH),
-    .COUNT(4096),
     .PMP_ENTRIES(PMP_ENTRIES),
     .HPM_COUNTERS(HPM_COUNTERS)
   ) csrfile_inst (

@@ -104,14 +104,15 @@ Exceptions use the same codes as l0 (0..7 and 11, see the l0 doc). The extra one
 
 ## CSRs
 
-As in l0, the file is a flat 4096-entry array, so unimplemented CSRs (`mscratch`,
-`mcounteren`, `medeleg`, `pmpaddr*`, ...) read and write as plain storage rather than
-trapping. Where behaviour exists:
+As in l0, only the CSRs below exist, each as a named register in `csrfile.sv` (the counters, `pmpcfg*`/`pmpaddr*` and
+`mcountinhibit` are described with their own features). Any other address reads 0 and ignores writes, without trapping
+(`medeleg`, `mideleg` and `satp` for example). Where behaviour exists:
 
 | CSR | address | notes |
 |---|---|---|
 | `mstatus` | 0x300 | `MIE` (3), `MPIE` (7) and `MPP` (12:11, `00` or `11`) are writable. Everything else reads 0 |
 | `misa` | 0x301 | `0x4010_1101`: RV32, I, M, A, U. Read only |
+| `mscratch` | 0x340 | plain storage |
 | `mcounteren` | 0x306 | plain storage, bits 0..2 gate `cycle`, `time`, `instret` in user mode |
 | `mie` | 0x304 | writable bits 3, 7, 11 only |
 | `mtvec` | 0x305 | bit 1 forced to 0; mode = bit 0 |

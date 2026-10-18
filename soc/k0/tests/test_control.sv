@@ -201,8 +201,8 @@ module test_control;
     end else begin
       $display("[%0t] OK: fast finished in %0d cycles, slow in %0d", $time, fast_done, slow_done);
     end
-    if (fast.core_inst.csrfile_inst.csr_array[isa_shared::CSR_MCAUSE] !== 32'd0 ||
-        slow.core_inst.csrfile_inst.csr_array[isa_shared::CSR_MCAUSE] !== 32'd0) begin
+    if (fast.core_inst.csrfile_inst.mcause !== 32'd0 ||
+        slow.core_inst.csrfile_inst.mcause !== 32'd0) begin
       test_failed = 1;
       $display("[%0t] error: unexpected trap", $time);
     end

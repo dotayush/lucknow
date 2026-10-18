@@ -4,7 +4,8 @@
 `endif
 
 
-module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096, PMP_ENTRIES = 8, HPM_COUNTERS = 8) (
+// only the CSRs that exist are built, as named registers; any other address reads 0 and ignores writes.
+module csrfile #(parameter DATA_WIDTH = 32, PMP_ENTRIES = 8, HPM_COUNTERS = 8) (
     input wire clk,
     input wire rst_n,
 
@@ -47,8 +48,9 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096, PMP_ENTRIES = 8, HPM_C
   localparam [DATA_WIDTH-1:0] MIE_MASK = 32'h0000_0888;
   localparam [DATA_WIDTH-1:0] MSTATUS_MASK = 32'h0000_0088; // writable: MIE (bit 3), MPIE (bit 7)
   localparam [DATA_WIDTH-1:0] MSTATUS_MPP_M = 32'h0000_1800;
+  localparam [11:0] CSR_MSCRATCH = 12'h340;
 
-  reg [DATA_WIDTH-1:0] csr_array [0:COUNT-1];
+  reg [DATA_WIDTH-1:0] mstatus, mie, mtvec, mscratch, mepc, mcause, mtval, mcounteren_q;
   reg [63:0] cycle;
   reg user; // 1: user mode, 0: machine mode
   reg [63:0] instret;
@@ -92,22 +94,31 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096, PMP_ENTRIES = 8, HPM_C
     endcase
   endfunction
 
-  assign trap_vector = csr_array[CSR_MTVEC] & 32'hFFFFFFFC; // exceptions always go to the base address
-  assign mtvec_vectored = csr_array[CSR_MTVEC][0];
-  assign mcounteren = csr_array[CSR_MCOUNTEREN];
+  assign trap_vector = mtvec & 32'hFFFFFFFC; // exceptions always go to the base address
+  assign mtvec_vectored = mtvec[0];
+  assign mcounteren = mcounteren_q;
   assign priv_user = user;
 
   // mip has no storage: it is what the outside world says
   wire [DATA_WIDTH-1:0] mip = (irq_software ? IRQ_SOFTWARE : 0) | (irq_timer ? IRQ_TIMER : 0) | (irq_external ? IRQ_EXTERNAL : 0);
-  wire [DATA_WIDTH-1:0] enabled = mip & csr_array[CSR_MIE];
+  wire [DATA_WIDTH-1:0] enabled = mip & mie;
   // an interrupt for a higher privilege level is enabled whatever mstatus.MIE says: in user mode machine interrupts always are
-  assign irq_pending = (csr_array[CSR_MSTATUS][3] || priv_user) && (enabled != 0);
+  assign irq_pending = (mstatus[3] || priv_user) && (enabled != 0);
   // priority among machine level interrupts: external, software, timer
   assign irq_code = (enabled & IRQ_EXTERNAL) ? 4'd11 : (enabled & IRQ_SOFTWARE) ? 4'd3 : 4'd7;
 
   always @* begin
     case (csr_addr)
       CSR_MIP: csr_rdata = mip;
+      CSR_MSTATUS: csr_rdata = mstatus;
+      CSR_ISA: csr_rdata = 32'h40101101; // 32-bit (31:30), RV32I (bit 8), M (bit 12), A (bit 0), U (bit 20)
+      CSR_MIE: csr_rdata = mie;
+      CSR_MTVEC: csr_rdata = mtvec;
+      CSR_MSCRATCH: csr_rdata = mscratch;
+      CSR_MEPC: csr_rdata = mepc;
+      CSR_MCAUSE: csr_rdata = mcause;
+      CSR_MTVAL: csr_rdata = mtval;
+      CSR_MCOUNTEREN: csr_rdata = mcounteren_q;
       CSR_MCYCLE, CSR_CYCLE: csr_rdata = cycle[31:0];
       CSR_MCYCLEH, CSR_CYCLEH: csr_rdata = cycle[63:32];
       CSR_MINSTRET, CSR_INSTRET: csr_rdata = instret[31:0];
@@ -123,7 +134,7 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096, PMP_ENTRIES = 8, HPM_C
         else if (hpm_hi) csr_rdata = hpm[hpm_i][63:32];
         else if (hpm_evsel) csr_rdata = {28'b0, hpm_event[hpm_i]};
         else if (hpm_range) csr_rdata = 32'h0; // not implemented
-        else csr_rdata = csr_array[csr_addr];
+        else csr_rdata = 32'h0; // mvendorid marchid mimpid mhartid are 0, so is anything not built
       end
     endcase
   end
@@ -157,19 +168,14 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096, PMP_ENTRIES = 8, HPM_C
         pmpcfg[j] <= 8'h00;
         pmpaddr[j] <= 32'h0;
       end
-      for (int i = 0; i < COUNT; i = i + 1) begin
-        case (i)
-          CSR_MVENDORID: csr_array[i] <= 32'h00000000;
-          CSR_MARCHID: csr_array[i] <= 32'h00000000;
-          CSR_MIMPID: csr_array[i] <= 32'h00000000;
-          CSR_MHARTID: csr_array[i] <= 32'h00000000;
-          CSR_ISA: csr_array[i] <= 32'h40101101; // 32-bit (31:30), RV32I (bit 8), M (bit 12), A (bit 0), U (bit 20)
-          CSR_MTVEC: csr_array[i] <= 32'h00000000; // default trap vector
-          CSR_MCOUNTEREN: csr_array[i] <= COUNTEREN_MASK; // user mode may read every counter (linux's m-mode build never writes it)
-          CSR_MSTATUS: csr_array[i] <= 32'h00001800; // MPP = 11 (M-mode), MPIE = 0, MIE = 0
-          default: csr_array[i] <= 'b0;
-        endcase
-      end
+      mstatus <= 32'h00001800; // MPP = 11 (M-mode), MPIE = 0, MIE = 0
+      mie <= 32'h0;
+      mtvec <= 32'h0; // default trap vector
+      mscratch <= 32'h0;
+      mepc <= 32'h0;
+      mcause <= 32'h0;
+      mtval <= 32'h0;
+      mcounteren_q <= COUNTEREN_MASK; // user mode may read every counter (linux's m-mode build never writes it)
     end
     else begin
       if (!cycle_written && !mcountinhibit[0]) cycle <= cycle + 1;
@@ -179,21 +185,21 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096, PMP_ENTRIES = 8, HPM_C
       end
 
       if (trap) begin
-        csr_array[CSR_MEPC] <= trap_pc;
-        csr_array[CSR_MCAUSE] <= {trap_interrupt, 27'b0, trap_cause};
-        csr_array[CSR_MTVAL] <= trap_value;
+        mepc <= trap_pc;
+        mcause <= {trap_interrupt, 27'b0, trap_cause};
+        mtval <= trap_value;
 
         // update mstatus to reflect trap
-        csr_array[CSR_MSTATUS][7] <= csr_array[CSR_MSTATUS][3]; // MPIE = MIE
-        csr_array[CSR_MSTATUS][3] <= 0; // MIE = 0
-        csr_array[CSR_MSTATUS][12:11] <= user ? 2'b00 : 2'b11; // MPP = the mode the trap came from
+        mstatus[7] <= mstatus[3]; // MPIE = MIE
+        mstatus[3] <= 0; // MIE = 0
+        mstatus[12:11] <= user ? 2'b00 : 2'b11; // MPP = the mode the trap came from
         user <= 0;
       end
       else if (mret) begin
-        csr_array[CSR_MSTATUS][3] <= csr_array[CSR_MSTATUS][7]; // MIE = MPIE
-        csr_array[CSR_MSTATUS][7] <= 1; // MPIE = 1
-        csr_array[CSR_MSTATUS][12:11] <= 2'b00; // MPP = the least privileged mode, user
-        user <= (csr_array[CSR_MSTATUS][12:11] != 2'b11);
+        mstatus[3] <= mstatus[7]; // MIE = MPIE
+        mstatus[7] <= 1; // MPIE = 1
+        mstatus[12:11] <= 2'b00; // MPP = the least privileged mode, user
+        user <= (mstatus[12:11] != 2'b11);
       end
       else if (do_write) begin
         case (csr_addr)
@@ -203,11 +209,15 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096, PMP_ENTRIES = 8, HPM_C
           CSR_MINSTRETH: instret[63:32] <= wr_val;
           CSR_MIP: begin
           end // every implemented bit is a hardware input
-          CSR_MIE: csr_array[CSR_MIE] <= wr_val & MIE_MASK;
-          CSR_MCOUNTEREN: csr_array[CSR_MCOUNTEREN] <= wr_val & COUNTEREN_MASK;
+          CSR_MIE: mie <= wr_val & MIE_MASK;
+          CSR_MSCRATCH: mscratch <= wr_val;
+          CSR_MEPC: mepc <= wr_val;
+          CSR_MCAUSE: mcause <= wr_val;
+          CSR_MTVAL: mtval <= wr_val;
+          CSR_MCOUNTEREN: mcounteren_q <= wr_val & COUNTEREN_MASK;
           CSR_MCOUNTINHIBIT: mcountinhibit <= wr_val & INHIBIT_MASK;
-          CSR_MTVEC: csr_array[CSR_MTVEC] <= wr_val & ~32'h2; // mode is 0 (direct) or 1 (vectored)
-          CSR_MSTATUS: csr_array[CSR_MSTATUS] <= (wr_val & MSTATUS_MASK) | ((wr_val[12:11] == 2'b11) ? MSTATUS_MPP_M : 0); // MPP is user (00) or machine (11)
+          CSR_MTVEC: mtvec <= wr_val & ~32'h2; // mode is 0 (direct) or 1 (vectored)
+          CSR_MSTATUS: mstatus <= (wr_val & MSTATUS_MASK) | ((wr_val[12:11] == 2'b11) ? MSTATUS_MPP_M : 0); // MPP is user (00) or machine (11)
           12'h3A0, 12'h3A1, 12'h3A2, 12'h3A3: begin
             for (int k = 0; k < 4; k = k + 1) begin
               if ({csr_addr[1:0], 2'd0} + k < PMP_ENTRIES && !pmpcfg[{csr_addr[1:0], 2'd0} + k][7]) begin
@@ -224,7 +234,6 @@ module csrfile #(parameter DATA_WIDTH = 32, COUNT = 4096, PMP_ENTRIES = 8, HPM_C
             else if (hpm_lo) hpm[hpm_i][31:0] <= wr_val; // a write wins over the count
             else if (hpm_hi) hpm[hpm_i][63:32] <= wr_val;
             else if (hpm_evsel) hpm_event[hpm_i] <= (wr_val[4] ? 4'd0 : wr_val[3:0]); // events above 15 are not there
-            else if (!hpm_range) csr_array[csr_addr] <= wr_val; // the hpm registers that are not there ignore writes
           end
         endcase
       end
