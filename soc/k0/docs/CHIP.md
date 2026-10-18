@@ -101,6 +101,10 @@ Exceptions use the same codes as l0 (0..7 and 11, see the l0 doc). The extra one
 - `ecall` from user mode is cause 8, from machine mode 11.
 - Interrupts for machine mode are always enabled while the hart is in user mode, whatever `mstatus.MIE` says.
 - A trapping or stalled instruction does not retire.
+- Inside `control.sv` the one trap that follows the branch compare (a taken branch to a target that isn't 4 byte aligned) is kept
+  apart from the others (`trap_early`): the register file and the CSRs a trap does not touch use `trap_early` only, and the late
+  decision reaches only `next_pc` and the trap record (`mepc`, `mcause`, `mtval`, `mstatus`). Behaviour is the same, as in l0. The
+  branch events of the performance counters read the branch decision (`br_taken`) directly.
 
 ## CSRs
 

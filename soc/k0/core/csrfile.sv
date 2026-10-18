@@ -17,6 +17,7 @@ module csrfile #(parameter DATA_WIDTH = 32, PMP_ENTRIES = 8, HPM_COUNTERS = 8) (
 
     // trap inputs
     input wire trap,
+    input wire trap_early, // trap without the taken-branch case (see control.sv): trap is trap_early or a taken branch to a misaligned target
     input wire trap_interrupt, // the trap is an interrupt, trap_cause is its code
     input wire [3:0] trap_cause,
     input wire [DATA_WIDTH-1:0] trap_value,
@@ -154,36 +155,17 @@ module csrfile #(parameter DATA_WIDTH = 32, PMP_ENTRIES = 8, HPM_COUNTERS = 8) (
   wire cycle_written = do_write && (csr_addr == CSR_MCYCLE || csr_addr == CSR_MCYCLEH);
   wire instret_written = do_write && (csr_addr == CSR_MINSTRET || csr_addr == CSR_MINSTRETH);
 
+  // what a trap changes: the mode, mstatus and the trap record. these see the full `trap`, which for a taken
+  // branch to a misaligned target is known late (it follows the branch compare).
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-      cycle <= 64'd0;
-      instret <= 64'd0;
       user <= 0;
-      mcountinhibit <= 0;
-      for (int h = 0; h < HPM_COUNTERS; h = h + 1) begin
-        hpm[h] <= 64'd0;
-        hpm_event[h] <= (h < 15) ? h + 1 : 4'd0; // counter 3 + h counts event 1 + h until reprogrammed
-      end
-      for (int j = 0; j < 16; j = j + 1) begin
-        pmpcfg[j] <= 8'h00;
-        pmpaddr[j] <= 32'h0;
-      end
       mstatus <= 32'h00001800; // MPP = 11 (M-mode), MPIE = 0, MIE = 0
-      mie <= 32'h0;
-      mtvec <= 32'h0; // default trap vector
-      mscratch <= 32'h0;
       mepc <= 32'h0;
       mcause <= 32'h0;
       mtval <= 32'h0;
-      mcounteren_q <= COUNTEREN_MASK; // user mode may read every counter (linux's m-mode build never writes it)
     end
     else begin
-      if (!cycle_written && !mcountinhibit[0]) cycle <= cycle + 1;
-      if (retire && !instret_written && !mcountinhibit[2]) instret <= instret + 1;
-      for (int h = 0; h < HPM_COUNTERS; h = h + 1) begin
-        if (!mcountinhibit[h + 3] && hpm_event[h] != 4'd0 && hpm_events[hpm_event[h]]) hpm[h] <= hpm[h] + 64'd1;
-      end
-
       if (trap) begin
         mepc <= trap_pc;
         mcause <= {trap_interrupt, 27'b0, trap_cause};
@@ -203,6 +185,46 @@ module csrfile #(parameter DATA_WIDTH = 32, PMP_ENTRIES = 8, HPM_COUNTERS = 8) (
       end
       else if (do_write) begin
         case (csr_addr)
+          CSR_MSTATUS: mstatus <= (wr_val & MSTATUS_MASK) | ((wr_val[12:11] == 2'b11) ? MSTATUS_MPP_M : 0); // MPP is user (00) or machine (11)
+          CSR_MEPC: mepc <= wr_val;
+          CSR_MCAUSE: mcause <= wr_val;
+          CSR_MTVAL: mtval <= wr_val;
+          default: begin end
+        endcase
+      end
+    end
+  end
+
+  // everything else: the counters, the pmp, mie, mtvec, mscratch, mcounteren. a trap never touches them, they are
+  // written only by csr instructions, and a late trap (a taken branch) never comes with one, so their write enable
+  // uses trap_early and stays off the late path.
+  always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      cycle <= 64'd0;
+      instret <= 64'd0;
+      mcountinhibit <= 0;
+      mie <= 32'h0;
+      mtvec <= 32'h0; // default trap vector
+      mscratch <= 32'h0;
+      mcounteren_q <= COUNTEREN_MASK; // user mode may read every counter (linux's m-mode build never writes it)
+      for (int h = 0; h < HPM_COUNTERS; h = h + 1) begin
+        hpm[h] <= 64'd0;
+        hpm_event[h] <= (h < 15) ? h + 1 : 4'd0; // counter 3 + h counts event 1 + h until reprogrammed
+      end
+      for (int j = 0; j < 16; j = j + 1) begin
+        pmpcfg[j] <= 8'h00;
+        pmpaddr[j] <= 32'h0;
+      end
+    end
+    else begin
+      if (!cycle_written && !mcountinhibit[0]) cycle <= cycle + 1;
+      if (retire && !instret_written && !mcountinhibit[2]) instret <= instret + 1;
+      for (int h = 0; h < HPM_COUNTERS; h = h + 1) begin
+        if (!mcountinhibit[h + 3] && hpm_event[h] != 4'd0 && hpm_events[hpm_event[h]]) hpm[h] <= hpm[h] + 64'd1;
+      end
+
+      if (!trap_early && !mret && do_write) begin
+        case (csr_addr)
           CSR_MCYCLE: cycle[31:0] <= wr_val; // a write wins over the count
           CSR_MCYCLEH: cycle[63:32] <= wr_val;
           CSR_MINSTRET: instret[31:0] <= wr_val;
@@ -211,13 +233,9 @@ module csrfile #(parameter DATA_WIDTH = 32, PMP_ENTRIES = 8, HPM_COUNTERS = 8) (
           end // every implemented bit is a hardware input
           CSR_MIE: mie <= wr_val & MIE_MASK;
           CSR_MSCRATCH: mscratch <= wr_val;
-          CSR_MEPC: mepc <= wr_val;
-          CSR_MCAUSE: mcause <= wr_val;
-          CSR_MTVAL: mtval <= wr_val;
           CSR_MCOUNTEREN: mcounteren_q <= wr_val & COUNTEREN_MASK;
           CSR_MCOUNTINHIBIT: mcountinhibit <= wr_val & INHIBIT_MASK;
           CSR_MTVEC: mtvec <= wr_val & ~32'h2; // mode is 0 (direct) or 1 (vectored)
-          CSR_MSTATUS: mstatus <= (wr_val & MSTATUS_MASK) | ((wr_val[12:11] == 2'b11) ? MSTATUS_MPP_M : 0); // MPP is user (00) or machine (11)
           12'h3A0, 12'h3A1, 12'h3A2, 12'h3A3: begin
             for (int k = 0; k < 4; k = k + 1) begin
               if ({csr_addr[1:0], 2'd0} + k < PMP_ENTRIES && !pmpcfg[{csr_addr[1:0], 2'd0} + k][7]) begin

@@ -26,6 +26,8 @@ module test_csrfile;
   reg [1:0] csr_op;
 
   reg trap;
+  reg late_trap; // the trap comes from a taken branch, which control.sv keeps out of trap_early
+  wire trap_early = trap && !late_trap;
   reg trap_interrupt;
   reg [3:0] trap_cause;
   reg [31:0] trap_value;
@@ -52,6 +54,7 @@ module test_csrfile;
     .csr_rdata(csr_rdata),
     .csr_op(csr_op),
     .trap(trap),
+    .trap_early(trap_early),
     .trap_interrupt(trap_interrupt),
     .trap_cause(trap_cause),
     .trap_value(trap_value),
@@ -116,6 +119,7 @@ module test_csrfile;
     csr_wdata = 0;
     csr_op = 0;
     trap = 0;
+    late_trap = 0;
     trap_interrupt = 0;
     irq_software = 0;
     irq_timer = 0;
@@ -410,6 +414,20 @@ module test_csrfile;
     trap_interrupt = 0;
     expect_csr("mcause of a timer interrupt", CSR_MCAUSE, 32'h8000_0007);
     expect_csr("mepc of an interrupt", CSR_MEPC, 32'h0000_0040);
+
+    // a trap known late (a taken branch to a misaligned target) records the same state
+    @(negedge clk);
+    trap_pc = 32'h0000_0060;
+    trap_cause = 4'd0;
+    trap_value = 32'h0000_0062;
+    late_trap = 1;
+    trap = 1;
+    @(negedge clk);
+    trap = 0;
+    late_trap = 0;
+    expect_csr("mcause of a late trap", CSR_MCAUSE, 32'h0000_0000);
+    expect_csr("mepc of a late trap", CSR_MEPC, 32'h0000_0060);
+    expect_csr("mtval of a late trap", CSR_MTVAL, 32'h0000_0062);
 
     // mtvec mode: only 0 (direct) and 1 (vectored)
     write_csr(CSR_MTVEC, CSR_WRITE, 32'h0000_0103);
