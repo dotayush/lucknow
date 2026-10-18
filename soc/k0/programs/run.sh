@@ -10,7 +10,7 @@ set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 K0=$HERE/..
-TOOLCHAIN=${TOOLCHAIN:-/opt/riscv32/bin/riscv32-unknown-elf-}
+TOOLCHAIN=${TOOLCHAIN:-riscv32-unknown-elf-}
 name=${1:-hello}
 BUILD=$K0/programs/build
 mkdir -p $BUILD

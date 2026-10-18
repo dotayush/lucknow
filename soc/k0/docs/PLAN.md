@@ -75,7 +75,7 @@ requires 4-byte aligned fetch), FPU (config off), MMU, S-mode, SBI.
 1. Pick a kernel: latest LTS that still has `CONFIG_RISCV_M_MODE` and NOMMU RV32 support
    **(verify both)**. Pin the exact version and commit in this doc once chosen.
 2. Build a toolchain that can produce Linux userland for `rv32ima` (ilp32): use Buildroot
-   or crosstool-ng. The existing `/opt/riscv32/bin/riscv32-unknown-elf-*` is bare-metal, fine
+   or crosstool-ng. The existing `$EDA/riscv32/bin/riscv32-unknown-elf-*` is bare-metal, fine
    for the kernel itself (`CROSS_COMPILE=`), not for userland.
 3. Choose userland. NOMMU cannot `fork()`: needs `vfork`, and binaries in FLAT (bFLT) or
    FDPIC format, not plain ELF. Candidates: busybox with uClibc-ng + `elf2flt`

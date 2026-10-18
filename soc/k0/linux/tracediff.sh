@@ -72,7 +72,7 @@ def where(pc):
     if not syms: return ""
     k = bisect.bisect_right([s[0] for s in syms], pc) - 1
     return f"{syms[k][1]}+{pc - syms[k][0]:#x}" if k >= 0 else ""
-tc = "/opt/riscv32/bin/riscv32-unknown-elf-nm"
+tc = "riscv32-unknown-elf-nm"
 try:
     out = subprocess.run([tc, "-n", vm], capture_output=True, text=True).stdout
     for l in out.splitlines():

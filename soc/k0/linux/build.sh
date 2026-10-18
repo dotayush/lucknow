@@ -15,7 +15,7 @@ KVER=6.12.112
 WORK=${WORK:-$HOME/personal/k0-linux}
 LINUX=${LINUX:-$WORK/src/linux-$KVER}
 OUT=${OUT:-$HERE/out}
-TC=${TOOLCHAIN:-/opt/riscv32/bin/riscv32-unknown-elf-}
+TC=${TOOLCHAIN:-riscv32-unknown-elf-}
 need bc flex bison make python3 curl ${TC}gcc
 
 # fetch linux if not already there

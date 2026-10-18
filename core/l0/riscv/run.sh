@@ -24,7 +24,7 @@ RV_IFLAGS=${RV_IFLAGS:-}
 cd "$CORE" || exit 1
 
 RISCV_TESTS_REV=7b68f7b91f827f8d94cc1c57ff123752c5c8f704
-TOOLCHAIN=${TOOLCHAIN:-/opt/riscv32/bin/riscv32-unknown-elf-}
+TOOLCHAIN=${TOOLCHAIN:-riscv32-unknown-elf-}
 SRC=$HERE/../riscv-tests
 BUILD=$CORE/riscv/build
 
