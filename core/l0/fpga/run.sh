@@ -4,7 +4,7 @@
 # then nextpnr-ecp5 with no pin constraints, so only the logic and routing are measured.
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
-source "$HERE/../../../eda/env.sh"
+source "$HERE/../../../eda.sh"
 S=$HERE/../src
 dir=$1; dev=${2:-25k}
 mkdir "$dir"; cd "$dir"

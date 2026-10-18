@@ -1,25 +1,25 @@
 # end to end flows: digital, analog, mixed signal
 
-All commands assume `source ~/personal/lucknow/eda/env.sh` first. Tool locations are in `tool_paths.md`.
+All commands assume `source eda.sh` (from the repository root) first; it reads `.env`, see `README.md`. Tool locations are in `TOOLS.md`.
 Process: SkyWater sky130. Wulff's blocks use `sky130B` (a few, like `lelo_*`, use `sky130A`); the LibreLane digital flow
 uses `sky130A` (`sky130_fd_sc_hd` cells). Both variants come from the one PDK install.
 
 Status marks: **[verified]** ran on this machine, **[untested]** the recommended route, not run yet.
-Re-run every check with `eda/verify.sh <new empty dir>` (add `--gui` for the window checks, `--full` for the long runs).
+Re-run every check with `./eda.sh verify <new empty dir>` (add `--gui` for the window checks, `--full` for the long runs).
 
 ## 0. setup and sanity
 
 ```bash
-cd ~/personal/lucknow/eda
-./setup.sh                      # idempotent: venv, librelane, make shim
-source env.sh
-make -v | head -1               # must resolve to .../eda/tools/bin/make
+cp .env.example .env            # once: set EDA, the tools directory
+./eda.sh install                # idempotent: installs what is missing under $EDA
+source eda.sh
+make -v | head -1               # must resolve to $EDA/tools/bin/make
 magic --version                 # 8.3.684
-./verify.sh /media/ayush/secondary/eda/scratch/verify-$(date +%m%d%H%M)   # a new dir every time, nothing is deleted
+./eda.sh verify $EDA/scratch/verify-$(date +%m%d%H%M)   # a new dir every time, nothing is deleted
 ```
 
 `make` here is a shim that forces bash. Wulff's Makefiles use `echo -e`; under dash that writes a
-literal `-e` into Tcl scripts and DRC reports a false FAIL. Without `env.sh` sourced, use `make SHELL=/bin/bash ...`.
+literal `-e` into Tcl scripts and DRC reports a false FAIL. Without `eda.sh` sourced, use `make SHELL=/bin/bash ...`.
 `PDK_ROOT` has no trailing slash on purpose: `//` starts a comment for ngspice older than 40.
 
 ## 1. analog (opamps, ADCs, DACs) **[verified]**
@@ -100,8 +100,8 @@ Caveats found while checking:
 
 ## 2. digital (RTL to GDSII) with LibreLane
 
-LibreLane runs Yosys, OpenROAD, Magic (DRC, GDS), Netgen (LVS) and KLayout from a Nix store on the SSD
-(`eda/nixroot`), through `bwrap`; no Docker, no root. `librelane`, `openroad`, `klayout` and `sta` on `PATH` are wrappers
+LibreLane runs Yosys, OpenROAD, Magic (DRC, GDS), Netgen (LVS) and KLayout from a Nix store
+(`$EDA/nixroot`), through `bwrap`; no Docker, no root. `librelane`, `openroad`, `klayout` and `sta` on `PATH` are wrappers
 around `nixrun`. Any other tool from that store: `nixrun yosys ...`, `nixrun magic ...`.
 
 ```bash
@@ -115,12 +115,11 @@ verilator --lint-only -Wall -Wno-fatal <those files plus memory.sv l0.sv> --top-
 yosys -p "plugin -i slang; read_slang --top l0_core <those files>; synth -top l0_core"
 
 # the real run **[verified: clean DRC, LVS, antenna and XOR; timing in core/l0/librelane/RUNS.md]**
-core/l0/librelane/run.sh t<N> '{"CLOCK_PERIOD": 44, "DEFAULT_CORNER": "nom_ss_100C_1v60",
-  "PNR_SDC_FILE": "<repo>/core/l0/librelane/l0.sdc", "SIGNOFF_SDC_FILE": "<repo>/core/l0/librelane/l0.sdc"}'
+core/l0/librelane/run.sh t<N> '{"CLOCK_PERIOD": 44}'   # the slow corner, delay cells and l0.sdc come from .env (PDK_FAMILY)
 # results: <run>/final/{gds,lef,def,nl,sdc,metrics.json} and reports for DRC, LVS, antenna, STA
 core/l0/librelane/segments.sh core/l0/librelane/runs/t<N>/final    # delay of each piece of the cycle, from a finished run
 core/l0/librelane/screen.sh <new_dir>                              # preview an RTL change by synthesis alone, about a minute
-eda/view.sh klayout|openroad|magic <file>                          # look at a result; klayout loads the layer names and the 3D view
+./eda.sh view klayout|openroad|magic <file>                          # look at a result; klayout loads the layer names and the 3D view
 ```
 
 What `core/l0/librelane` holds and why (details: `RUNS.md`, `TIMING.md` there):
@@ -129,15 +128,15 @@ What `core/l0/librelane` holds and why (details: `RUNS.md`, `TIMING.md` there):
 2. `l0.sdc` replaces the flow's generic constraint (20% of the clock on every port), which hides the real path. It models the memory as an
    access time and cuts the cycle at the ports.
 3. `config.json`: `DESIGN_NAME`, `VERILOG_FILES`, `CLOCK_PORT`, `CLOCK_PERIOD`, utilisation, and the cells kept out of buffering.
-4. each run is stored on the SSD and linked into `runs/`; once recorded in `RUNS.md` its folder is deleted (about 1.8 GB each).
+4. each run is stored under `$EDA/scratch` and linked into `runs/`; once recorded in `RUNS.md` its folder is deleted (about 1.8 GB each).
 
 `soc/k0` is not ready for this: its ram and rom are behavioral arrays that would become thousands of flip-flops.
 
 ## 3. mixed signal **[verified up to signoff; see the result below]**
 
 A real analog block (`LELO_GR02`, the oscillator from `lelo_gr02_sky130a`) was placed as a macro in a small digital design
-and taken through LibreLane. The working files are in `/media/ayush/secondary/eda/scratch/ms-demo/design`
-(`ms_demo.v`, `config.json`, `pdn_cfg.tcl`, the macro `.gds` and `.lef`).
+and taken through LibreLane. The demo scripts are not kept in the repository (they are in git history, commit `e78ade9` and earlier,
+under `eda/ms_demo/`); the steps below are what they did.
 
 ```bash
 # 1. analog block, from its work/ directory (so its .magicrc is used): lef and gds
@@ -165,7 +164,7 @@ macro ground pin), `PDN_CFG`, `PDN_VPITCH` and `PDN_HPITCH`, `DIE_AREA`.
 synchroniser that counts its output) closes with every signoff count at 0: Magic DRC 0, KLayout DRC 0, LVS errors 0
 (device and net differences 0), antenna 0, routing DRC 0, Magic/KLayout streamout XOR 0, setup and hold violations 0 at a
 50 ns clock (worst setup slack +37 ns, hold +0.11 ns). The final GDS has the analog macro inside it.
-Everything above is scripted in `eda/ms_demo/run.sh <new_dir>` (about 10 minutes).
+The run takes about 10 minutes.
 
 Two things that went wrong first, and are worth knowing:
 
@@ -184,8 +183,8 @@ analog block in Verilator or iverilog, or ngspice on the analog block with a beh
 ## 4. housekeeping
 
 ```bash
-df -h / /home /media/ayush/secondary   # keep / above 5 GB
+df -h / /home "$EDA"   # keep / above 5 GB
 ```
 
-Run each check in a new directory under `/media/ayush/secondary/eda/scratch`; do not delete run directories to save
+Run each check in a new directory under `$EDA/scratch`; do not delete run directories to save
 space without asking (a standing rule: no recursive deletes).
