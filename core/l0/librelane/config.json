@@ -1,0 +1,18 @@
+{
+  "DESIGN_NAME": "l0_core",
+  "VERILOG_FILES": [
+    "dir::../src/shared.sv",
+    "dir::../src/alu.sv",
+    "dir::../src/csrfile.sv",
+    "dir::../src/decoder.sv",
+    "dir::../src/regfile.sv",
+    "dir::../src/signext.sv",
+    "dir::../src/control.sv"
+  ],
+  "CLOCK_PORT": "clk",
+  "CLOCK_PERIOD": 50,
+  "EXTRA_EXCLUDED_CELLS": ["sky130_fd_sc_hd__clkdlybuf*", "sky130_fd_sc_hd__dlymetal*"],
+  "FP_SIZING": "relative",
+  "FP_CORE_UTIL": 40,
+  "PL_TARGET_DENSITY_PCT": 50
+}
