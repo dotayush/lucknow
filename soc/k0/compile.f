@@ -1,6 +1,7 @@
 ./core/shared.sv
 ./core/signext.sv
 ./core/alu.sv
+./core/divider.sv
 ./core/decoder.sv
 ./core/cache.sv
 ./core/uart.sv

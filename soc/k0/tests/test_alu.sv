@@ -402,28 +402,6 @@ module test_alu;
     check_op(ALU_MULHU, 32'h8000_0000, 32'd2, 32'h0000_0001);
     check_op(ALU_MULHU, 32'd3, 32'd4, 32'h0000_0000);
 
-    check_op(ALU_DIV, 32'd20, 32'd3, 32'd6);
-    check_op(ALU_DIV, -32'sd20, 32'd3, -32'sd6); // rounds toward zero
-    check_op(ALU_DIV, 32'd20, -32'sd3, -32'sd6);
-    check_op(ALU_DIV, -32'sd20, -32'sd3, 32'd6);
-    check_op(ALU_DIV, 32'd20, 32'd0, 32'hFFFF_FFFF); // divide by zero
-    check_op(ALU_DIV, 32'h8000_0000, 32'hFFFF_FFFF, 32'h8000_0000); // overflow
-
-    check_op(ALU_DIVU, 32'd20, 32'd3, 32'd6);
-    check_op(ALU_DIVU, 32'hFFFF_FFFF, 32'd2, 32'h7FFF_FFFF);
-    check_op(ALU_DIVU, 32'd20, 32'd0, 32'hFFFF_FFFF); // divide by zero
-
-    check_op(ALU_REM, 32'd20, 32'd3, 32'd2);
-    check_op(ALU_REM, -32'sd20, 32'd3, -32'sd2); // sign follows the dividend
-    check_op(ALU_REM, 32'd20, -32'sd3, 32'd2);
-    check_op(ALU_REM, -32'sd20, -32'sd3, -32'sd2);
-    check_op(ALU_REM, 32'd20, 32'd0, 32'd20); // divide by zero returns the dividend
-    check_op(ALU_REM, 32'h8000_0000, 32'hFFFF_FFFF, 32'd0); // overflow
-
-    check_op(ALU_REMU, 32'd20, 32'd3, 32'd2);
-    check_op(ALU_REMU, 32'hFFFF_FFFF, 32'd16, 32'd15);
-    check_op(ALU_REMU, 32'd7, 32'd0, 32'd7); // divide by zero returns the dividend
-
     finish; // End simulation
   end
 

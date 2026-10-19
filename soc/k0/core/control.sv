@@ -144,7 +144,13 @@ module control #(
   // an amo read that came back fine is not the end of the instruction, the write is still to do
   wire rmw_next = !irq_take && is_rmw && !illegal_amo && !amo_phase && !pmp_fetch_fault && !pmp_data_fault && imem_ready && mem_ready && (mem_error == NO_MEM_ERROR);
   // the whole core waits (pc, registers, csrs, memory are not updated) until the instruction and its data are there
-  wire stall = !imem_ready || (data_req && !mem_ready) || rmw_next;
+  // div, divu, rem and remu run in divider.sv, one bit per clock, and hold the core with the same stall as a slow memory.
+  // an instruction that is abandoned (interrupt, fetch fault) stops the divider and runs again when it is replayed
+  wire div_op = (alu_op == ALU_DIV) || (alu_op == ALU_DIVU) || (alu_op == ALU_REM) || (alu_op == ALU_REMU);
+  wire div_run = div_op && !irq_take && !pmp_fetch_fault && imem_ready;
+  wire div_done;
+  wire [DATA_WIDTH-1:0] div_result;
+  wire stall = !imem_ready || (data_req && !mem_ready) || rmw_next || (div_run && !div_done);
   wire priv_user; // user mode: machine csrs, mret and wfi are illegal
   wire [DATA_WIDTH-1:0] mcounteren;
   // what user mode may not do: csrs of a higher privilege level (address bits 9:8), the counters it has not
@@ -424,19 +430,19 @@ module control #(
               end
               RM_DIV: begin
                 l_alu_op = ALU_DIV;
-                rd_data = alu_result;
+                rd_data = div_result;
               end
               RM_DIVU: begin
                 l_alu_op = ALU_DIVU;
-                rd_data = alu_result;
+                rd_data = div_result;
               end
               RM_REM: begin
                 l_alu_op = ALU_REM;
-                rd_data = alu_result;
+                rd_data = div_result;
               end
               RM_REMU: begin
                 l_alu_op = ALU_REMU;
-                rd_data = alu_result;
+                rd_data = div_result;
               end
             endcase
           end
@@ -788,6 +794,19 @@ module control #(
     .zero(zero),
     .carry(carry),
     .overflow(overflow)
+  );
+
+  divider #(
+    .DATA_WIDTH(DATA_WIDTH)
+  ) divider_inst (
+    .clk(clk),
+    .rst_n(rst_n),
+    .run(div_run),
+    .alu_op(alu_op),
+    .a(alu_a),
+    .b(alu_b),
+    .done(div_done),
+    .result(div_result)
   );
 
   // decoder
