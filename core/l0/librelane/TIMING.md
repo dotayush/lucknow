@@ -65,14 +65,14 @@ After them, everything is serial: `taken` from the ALU compare, then the trap ch
 
 Segments (`segments.sh`, slow corner, extracted wires, no I/O delays), before and after splitting the trap (`t17` to `t18`):
 
-| segment | `t17` before | `t18` after the trap split | `t19` after the address adder | `t20` decode out of the register read |
-|---|---|---|---|---|
-| pc to `imem_addr` | 3.3 | 3.6 | 3.0 | 3.2 |
-| `imem_data` to `dmem_addr`/ctl/`dmem_wdata` | 23.7 | 23.6 | 21.4 | **18.9** |
-| `imem_data` to flop | 35.8 | **29.3** | 30.1 | 28.3 |
-| `dmem_rdata` to flop | 6.8 | 6.8 | 6.6 | 8.0 |
-| flop to `dmem_addr`/ctl/`dmem_wdata` | 19.5 | 17.6 | 15.5 | 16.5 |
-| flop to flop | 31.7 | **23.0** | 24.8 | 25.8 |
+| segment | `t17` before | `t18` after the trap split | `t19` after the address adder | `t20` decode out of the register read | `t32` memory error last, final constraints |
+|---|---|---|---|---|---|
+| pc to `imem_addr` | 3.3 | 3.6 | 3.0 | 3.2 | 3.2 |
+| `imem_data` to `dmem_addr`/ctl/`dmem_wdata` | 23.7 | 23.6 | 21.4 | 18.9 | **17.3** |
+| `imem_data` to flop | 35.8 | **29.3** | 30.1 | 28.3 | 24.2 |
+| `dmem_rdata` to flop | 6.8 | 6.8 | 6.6 | 8.0 | 6.9 |
+| flop to `dmem_addr`/ctl/`dmem_wdata` | 19.5 | 17.6 | 15.5 | 16.5 | 15.6 |
+| flop to flop | 31.7 | **23.0** | 24.8 | 25.8 | 22.6 |
 
 Segment times are not a floor: the resizer stops once a constraint is met, so the same logic is slower under a looser target.
 
@@ -141,6 +141,14 @@ with its operand and op-select muxes in front and the result mux behind; it now 
   shape: clock-referenced input delay of T/2 + clock-to-`dout` for the data and the 0.10 ns setup as output delay on the
   address. That belongs with the k0 interface (wait states), when the memory plan for k0 is decided; on an FPGA the
   memory is block RAM or external SDRAM instead.
+
+### Budgets and the final period (t26 to t33)
+
+The three pieces of a cycle have fixed budgets in `l0.sdc`, so spare time cannot move between them. The address segment gets `T - B_PC_OUT - 2 T_MEM - B_LOAD`.
+The load budget is set by `dmem_err` to flop (the memory error through the trap tree, 11.1 ns routed before `mem_fault`), not by `dmem_rdata` (8.0): `B_LOAD` 9 ns fails by 1.0 ns (t28).
+`B_PC_OUT` 4 ns is 0.13 ns short of `pc` to `imem_addr` in STA (t30, t31); 4.25 ns closes. With `B_PC_OUT` 4.25, `B_LOAD` 10 and the `mem_fault` RTL (t29):
+**41 ns closes (t32, +0.15 ns at the slow corner, no violations) and 40 ns does not (t33, -0.61 ns on `imem_data` to `dmem_addr[31]`).** Numbers in `RUNS.md` items 10 to 13.
+The chain is `3.2 + 4 + 17.3 + 4 + 6.9` = 35 ns of routed delay plus the 6 ns the budgets keep for driver, port load and uncertainty.
 
 ## 6. The same design on three PDKs
 
