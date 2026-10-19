@@ -26,8 +26,8 @@ module test_csrfile;
   reg [1:0] csr_op;
 
   reg trap;
-  reg late_trap; // the trap comes from a taken branch, which control.sv keeps out of trap_early
-  wire trap_early = trap && !late_trap;
+  reg late_trap; // the trap comes from a taken branch, which control.sv keeps out of trap_pre
+  wire trap_pre = trap && !late_trap;
   reg [3:0] trap_cause;
   reg [31:0] trap_value;
   reg [31:0] trap_pc;
@@ -43,7 +43,8 @@ module test_csrfile;
     .csr_rdata(csr_rdata),
     .csr_op(csr_op),
     .trap(trap),
-    .trap_early(trap_early),
+    .trap_pre(trap_pre),
+    .mem_fault(1'b0),
     .trap_cause(trap_cause),
     .trap_value(trap_value),
     .trap_pc(trap_pc),

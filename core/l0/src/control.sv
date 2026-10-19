@@ -75,6 +75,8 @@ module l0_core #(
   reg [1:0] csr_op;
   reg trap;
   reg trap_early; // trap without the taken-branch case: decode, fetch and memory errors, jump targets
+  reg trap_pre;   // trap_early without the memory error: known from the instruction alone
+  reg mem_fault;  // a load or store the memory refuses, and nothing earlier trapped: the latest of the early traps
   reg br_taken; // a conditional branch is taken: the only decision that comes from the late alu compare
   wire [DATA_WIDTH-1:0] br_target = pc + sign_extended_data; // jal and taken branches go here
   // load and store addresses and the jalr target have their own adder, off the alu's operand and result muxes: the address is
@@ -507,33 +509,37 @@ module l0_core #(
   // decode, the fetch and memory errors or the low bits of a jump target, which are known early. only the branch
   // decision (the full width compare in the alu) is late, so it is kept out of what the register file and most
   // csrs see: trap_early is the trap without it, and a taken branch writes neither a register nor a csr.
+  // the memory error comes back from outside, after the address, so it is kept apart too (mem_fault) and enters the write
+  // enables as the last term; synthesis treats every input as arriving at time zero and would otherwise bury it.
   logic [3:0] cause_early;
   logic [DATA_WIDTH-1:0] value_early;
   logic late_misaligned; // taken branch to a target that isn't 4 byte aligned, and nothing else trapped first
 
   always @* begin
     trap_early = 0;
+    trap_pre = 0;
+    mem_fault = 0;
     cause_early = TRAP_NONE;
     value_early = '0;
 
     // the first match wins, an instruction can only raise one. the misaligned jump or mret target is last,
     // as it was when branches were part of it.
     if (fetch_error != NO_MEM_ERROR) begin
-      trap_early = 1;
+      trap_pre = 1;
       cause_early = (fetch_error == OUT_OF_BOUNDS) ? TRAP_INST_ACCESS_FAULT : TRAP_INST_ADDR_MISALIGNED;
       value_early = pc;
     end
     else if (env_trap) begin
-      trap_early = 1;
+      trap_pre = 1;
       cause_early = env_cause;
     end
     else if (illegal) begin
-      trap_early = 1;
+      trap_pre = 1;
       cause_early = TRAP_ILLEGAL_INSTRUCTION;
       value_early = instruction;
     end
     else if (mem_error != NO_MEM_ERROR) begin
-      trap_early = 1;
+      mem_fault = 1;
       value_early = addr;
       if (mem_read) begin
         cause_early = (mem_error == OUT_OF_BOUNDS) ? TRAP_LOAD_ACCESS_FAULT : TRAP_LOAD_ADDR_MISALIGNED;
@@ -542,10 +548,12 @@ module l0_core #(
       end
     end
     else if (inst_next_pc[1:0] != 2'b00) begin // jal, jalr or mret to a target that isn't 4 byte aligned
-      trap_early = 1;
+      trap_pre = 1;
       cause_early = TRAP_INST_ADDR_MISALIGNED;
       value_early = inst_next_pc;
     end
+
+    trap_early = trap_pre || mem_fault;
 
     late_misaligned = !trap_early && br_taken && (br_target[1:0] != 2'b00);
     trap = trap_early || late_misaligned;
@@ -608,7 +616,7 @@ module l0_core #(
     .rs2(instruction[24:20]),
     .rs1_data(rs1_data),
     .rs2_data(rs2_data),
-    .reg_write((reg_write || csr_to_rd) && !trap_early), // a trapping instruction does not retire (a taken branch writes nothing)
+    .reg_write(((reg_write || csr_to_rd) && !trap_pre) && !mem_fault), // a trapping instruction does not retire (a taken branch writes nothing); the memory error is the last term
     .rd(rd),
     .rd_data(rd_data)
   );
@@ -641,7 +649,8 @@ module l0_core #(
     .csr_rdata(csr_rdata),
     .csr_op(csr_op),
     .trap(trap),
-    .trap_early(trap_early),
+    .trap_pre(trap_pre),
+    .mem_fault(mem_fault),
     .trap_cause(trap_cause),
     .trap_value(trap_value),
     .trap_pc(pc),

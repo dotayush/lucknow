@@ -20,7 +20,8 @@ module csrfile #(parameter DATA_WIDTH = 32) (
 
     // trap inputs
     input wire trap,
-    input wire trap_early, // trap without the taken-branch case (see control.sv): trap is trap_early or a taken branch to a misaligned target
+    input wire trap_pre, // trap known from the instruction alone (see control.sv)
+    input wire mem_fault, // load or store refused by the memory: trap is trap_pre, mem_fault or a taken branch to a misaligned target
     input wire [3:0] trap_cause,
     input wire [DATA_WIDTH-1:0] trap_value,
     input wire [DATA_WIDTH-1:0] trap_pc,
@@ -102,7 +103,7 @@ module csrfile #(parameter DATA_WIDTH = 32) (
   end
 
   // the registers a trap does not touch. they are written only by csr instructions, and a late trap (a taken
-  // branch) never comes with one, so their write enable uses trap_early and stays off the late path.
+  // branch) never comes with one, so their write enable uses trap_pre and mem_fault (last) and stays off the late path.
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       mie <= '0;
@@ -112,7 +113,7 @@ module csrfile #(parameter DATA_WIDTH = 32) (
       mcounteren <= '0;
       pmpaddr0 <= '0;
     end
-    else if (!trap_early && !mret) begin
+    else if (!trap_pre && !mret && !mem_fault) begin
       case (csr_addr)
         CSR_MIE: mie <= apply(mie);
         CSR_MIP: mip <= apply(mip);
