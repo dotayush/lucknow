@@ -17,18 +17,48 @@ module alu #(parameter DATA_WIDTH = 32) (
   reg [DATA_WIDTH:0] a_ext;
   reg [DATA_WIDTH:0] b_ext;
   reg [DATA_WIDTH:0] result_ext;
-  reg [2*DATA_WIDTH-1:0] math_a_ext;
-  reg [2*DATA_WIDTH-1:0] math_b_ext;
-  reg [2*DATA_WIDTH-1:0] math_result_ext;
+  // multiplier: 33 bit operands and a signed product cover mul, mulh, mulhsu and mulhu (the low half is the same for all of them)
+  wire a_signed = (alu_op == ALU_MULH) || (alu_op == ALU_MULHSU);
+  wire b_signed = (alu_op == ALU_MULH);
+  wire signed [DATA_WIDTH:0] mul_a = {a_signed & a[DATA_WIDTH-1], a};
+  wire signed [DATA_WIDTH:0] mul_b = {b_signed & b[DATA_WIDTH-1], b};
+  wire signed [2*DATA_WIDTH+1:0] mul_p = mul_a * mul_b;
+
+  // divider: an unsigned restoring array on the absolute values, signs fixed afterwards. quotient and remainder come out of the same array
+  function automatic [2*DATA_WIDTH-1:0] udivmod(input [DATA_WIDTH-1:0] n, input [DATA_WIDTH-1:0] d);
+    reg [DATA_WIDTH-1:0] q;
+    reg [DATA_WIDTH:0] r;
+    integer i;
+    begin
+      q = '0;
+      r = '0;
+      for (i = DATA_WIDTH - 1; i >= 0; i = i - 1) begin
+        r = {r[DATA_WIDTH-1:0], n[i]};
+        if (r >= {1'b0, d}) begin
+          r = r - {1'b0, d};
+          q[i] = 1'b1;
+        end
+      end
+      udivmod = {r[DATA_WIDTH-1:0], q};
+    end
+  endfunction
+
+  wire div_signed = (alu_op == ALU_DIV) || (alu_op == ALU_REM);
+  wire a_neg = div_signed & a[DATA_WIDTH-1];
+  wire b_neg = div_signed & b[DATA_WIDTH-1];
+  wire [DATA_WIDTH-1:0] div_n = a_neg ? -a : a;
+  wire [DATA_WIDTH-1:0] div_d = b_neg ? -b : b;
+  wire [2*DATA_WIDTH-1:0] div_qr = udivmod(div_n, div_d);
+  wire [DATA_WIDTH-1:0] div_q = div_qr[DATA_WIDTH-1:0];
+  wire [DATA_WIDTH-1:0] div_r = div_qr[2*DATA_WIDTH-1:DATA_WIDTH];
+  wire [DATA_WIDTH-1:0] div_q_signed = (a_neg ^ b_neg) ? -div_q : div_q;
+  wire [DATA_WIDTH-1:0] div_r_signed = a_neg ? -div_r : div_r;
 
   always @* begin
     a_ext = {1'b0, a};
     b_ext = {1'b0, b};
     result = '0;
     result_ext = '0;
-    math_a_ext = '0;
-    math_b_ext = '0;
-    math_result_ext = '0;
     overflow = '0;
 
     case (alu_op)
@@ -75,60 +105,13 @@ module alu #(parameter DATA_WIDTH = 32) (
         result = $signed(a) >>> b[$clog2(DATA_WIDTH)-1:0];
       end
 
-      // multiplication operations
-      ALU_MUL: begin
-        result = a * b; // lower DATA_WIDTH bits of the product
-      end
-      ALU_MULH: begin
-        math_a_ext = {{(DATA_WIDTH){a[DATA_WIDTH-1]}}, a}; // sign-extend a
-        math_b_ext = {{(DATA_WIDTH){b[DATA_WIDTH-1]}}, b}; // sign-extend b
-        math_result_ext = math_a_ext * math_b_ext;
-        result = math_result_ext[2*DATA_WIDTH-1:DATA_WIDTH]; // upper DATA_WIDTH bits of the product
-      end
-      ALU_MULHSU: begin
-        math_a_ext = {{(DATA_WIDTH){a[DATA_WIDTH-1]}}, a}; // sign-extend a
-        math_b_ext = { {DATA_WIDTH{1'b0}}, b}; // zero-extend b
-        math_result_ext = math_a_ext * math_b_ext;
-        result = math_result_ext[2*DATA_WIDTH-1:DATA_WIDTH];
-      end
-      ALU_MULHU: begin
-        math_a_ext = { {DATA_WIDTH{1'b0}}, a}; // zero-extend a
-        math_b_ext = { {DATA_WIDTH{1'b0}}, b}; // zero-extend b
-        math_result_ext = math_a_ext * math_b_ext;
-        result = math_result_ext[2*DATA_WIDTH-1:DATA_WIDTH];
-      end
-      ALU_DIV: begin
-        if (b == 0) begin
-          result = 32'hFFFFFFFF; // return all 1s on division by zero
-        end else if (a == 32'h80000000 && b == 32'hFFFFFFFF) begin
-          result = 32'h80000000; // in case of overflow return min int
-        end else begin
-          result = $signed(a) / $signed(b); // else go for it.
-        end
-      end
-      ALU_DIVU: begin
-        if (b == 0) begin
-          result = 32'hFFFFFFFF; // return all 1s on division by zero
-        end else begin
-          result = a / b; // else go for it.
-        end
-      end
-      ALU_REM: begin
-        if (b == 0) begin
-          result = a; // return dividend on division by zero
-        end else if (a == 32'h80000000 && b == 32'hFFFFFFFF) begin
-          result = 0; // in case of overflow return 0
-        end else begin
-          result = $signed(a) % $signed(b); // else go for it.
-        end
-      end
-      ALU_REMU: begin
-        if (b == 0) begin
-          result = a; // return dividend on division by zero
-        end else begin
-          result = a % b; // else go for it.
-        end
-      end
+      // multiplication and division: one multiplier and one divider shared by the four operations of each
+      ALU_MUL: result = mul_p[DATA_WIDTH-1:0]; // lower DATA_WIDTH bits of the product
+      ALU_MULH, ALU_MULHSU, ALU_MULHU: result = mul_p[2*DATA_WIDTH-1:DATA_WIDTH]; // upper bits
+      ALU_DIV: result = (b == 0) ? 32'hFFFFFFFF : div_q_signed; // overflow (min int / -1) comes out as min int by itself
+      ALU_DIVU: result = (b == 0) ? 32'hFFFFFFFF : div_q;
+      ALU_REM: result = (b == 0) ? a : div_r_signed; // overflow gives 0
+      ALU_REMU: result = (b == 0) ? a : div_r;
 
       default: begin
         result = '0;

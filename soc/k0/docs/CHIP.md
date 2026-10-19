@@ -57,7 +57,10 @@ the next fetch. `memory/bootrom.hex` is only 4 words; the rest of the rom reads 
 
 - **RV32I** as in l0 (see `core/l0/docs/CHIP.md`), plus:
 - **M**: `mul mulh mulhsu mulhu div divu rem remu`, each computed combinationally in the
-  ALU in one clock (division by zero and overflow follow the spec).
+  ALU in one clock (division by zero and overflow follow the spec). The ALU has one 33 bit signed multiplier
+  for the four multiplies and one unsigned restoring divider (on the absolute values, signs fixed afterwards)
+  for the four divides, instead of one array per instruction: the separate arrays (three 64x64 multiplies and
+  four 32 bit dividers) did not get through logic synthesis in 40 minutes (`librelane/RUNS.md`).
 - **A**: `lr.w`, `sc.w` and `amoswap/add/xor/and/or/min/max/minu/maxu.w`.
   - Word only (`f3 = 010`); `.aq/.rl` bits are accepted and ignored (nothing reorders).
   - `lr.w` takes a one-word reservation. It is cleared by any store, any `sc`/AMO, a trap and `mret`.
