@@ -270,7 +270,7 @@ cmd_view() {
       local tcl; tcl=$(mktemp "${TMPDIR:-/tmp}/view-XXXXXX.tcl")
       {
         echo "read_db $file"
-        echo "read_liberty $sky/libs.ref/$STD_CELL_LIBRARY/lib/${STD_CELL_LIBRARY}__$PDK_TYP.lib"
+        echo "read_liberty ${PDK_LIB_SLOW%$PDK_SLOW.lib}$PDK_TYP.lib"
         [ -n "$sdc" ] && echo "read_sdc [file normalize $sdc]"
       } > "$tcl"
       exec openroad -gui "$tcl" ;;
