@@ -28,6 +28,10 @@ KLayout DRC, routing DRC, LVS, antenna and layout XOR; "clean" means all six are
 | t17 | where do the hold buffers come from | t14 repeated | 44 | ss | `l0.sdc` |
 | t18 | does splitting the trap help | RTL: trap split into early and late parts, t17 settings | 44 | ss | `l0.sdc` |
 | t19 | does a dedicated address adder help | RTL: `rs1 + imm` for loads, stores and `jalr` on its own adder, t18 settings | 44 | ss | `l0.sdc` |
+| t20 | does taking decode out of the register read and the address help | RTL: register file reads `instruction[19:15]` and `[24:20]` (not the decoder's gated `rs1`/`rs2`), `dmem_addr` is the adder output without opcode selection, adder offset from the instruction bits, t19 settings | 44 | ss | `l0.sdc` |
+| t21 | (IHP SG13G2, unscaled budgets) | the same core on IHP with the sky130 nanoseconds in `l0.sdc` | 25 | slow | `l0.sdc` |
+| t24 | the same core on IHP | `PDK_FAMILY=ihp-sg13g2`, `l0.sdc` budgets scaled by FO4 | 33.1 | slow | `l0.sdc` |
+| t25 | the same core on gf180mcu | `PDK_FAMILY=gf180mcu`, `l0.sdc` budgets scaled by FO4 | 138.8 | ss | `l0.sdc` |
 
 "Fallback SDC" is LibreLane's generic one: 20% of the clock as input and output delay on every port (`TIMING.md` section 2).
 Not in the table: t1 (the core with memories inside, failed at floorplan: Yosys removed everything, `control` has no outputs),
@@ -52,6 +56,9 @@ out of legal sites after the resizer added about 35% cell area).
 | t17 | 120,960 | 0.51 | -4.43 | +3.62 | +4.25 | 331 | 1277 | 2.96 | clean | bit-identical to t14: the flow is deterministic |
 | t18 | 119,130 | - | -4.57 | +3.46 | +4.13 | 78 | 1302 | 2.96 | clean | targeted segments -6.5 ns, limiter is elsewhere |
 | t19 | 121,800 | 0.51 | -2.38 | +3.79 | +4.37 | 20 | 1321 | 2.99 | clean | limiting segment -2.2 ns, area +2.2% |
+| t20 | 122,226 | 0.51 | -0.01 | +3.59 | +4.29 | 1 | 1345 | 3.07 | clean | decode out of the register read: +2.4 ns slack, area +0.3%, one path 11 ps short |
+| t24 (IHP) | 185,254 | - | +1.10 | +3.09 | +3.49 | 0 | - | 3.42 | clean | other PDK, see TIMING.md section 6 |
+| t25 (gf180mcu) | 371,327 | - | +2.78 | +12.66 | +14.63 | 0 | - | 13.3 | clean (no KLayout DRC) | other PDK, see TIMING.md section 6 |
 
 Path segments, slow corner, extracted wires, no I/O delays (`segments.sh`):
 
@@ -63,6 +70,9 @@ Path segments, slow corner, extracted wires, no I/O delays (`segments.sh`):
 | t16 | 3.2 | 25.0 | 36.4 | 6.1 | 19.1 | 30.6 |
 | t18 | 3.6 | 23.6 | 29.3 | 6.8 | 17.6 | 23.0 |
 | t19 | 3.0 | 21.4 | 30.1 | 6.6 | 15.5 | 24.8 |
+| t20 | 3.2 | 18.9 | 28.3 | 8.0 | 16.5 | 25.8 |
+| t24 (IHP) | 1.7 | 11.0 | 17.9 | 5.3 | 7.8 | 14.7 |
+| t25 (gf180mcu) | 9.1 | 47.2 | 71.8 | 21.5 | 34.0 | 54.8 |
 
 ## What was learned
 
@@ -81,24 +91,32 @@ Path segments, slow corner, extracted wires, no I/O delays (`segments.sh`):
    moved signoff slack at 44 ns from -4.57 to -2.38 ns and violating paths from 78 to 20, for +2.2% cell area. `imem_data` to flop and flop to flop got 0.8 and 1.8 ns
    worse in the routed result while the ideal-wire preview had them better: placement differences of about 1 to 2 ns are not predicted by the preview.
    The limiting path is still `imem_data` to `dmem_addr`, and its slack falls about 0.5 ns per address bit (bit 31 -2.38, bit 30 -1.91, bit 29 -1.39 ns): a carry chain that is
-   close to ripple. Synthesis only has to meet the 44 ns target, so the adder it builds is the one that just meets it (item 2 of the next candidates).
-8. **Hold buffers are a margin artifact** (t17, reports before repair). 1271 of the 1277 sit between a flop output and a mux input on the
+   close to ripple. (Yosys does not look at the clock period, so the adder is not sized to the target; the adder types were measured in t20: not the lever.)
+8. **Decode was in front of the register read** (t20). The decoder zeroes `rs1` and `rs2` for instructions that do not use them, and the register file read that
+   gated index, so a 134 fanout decode net (4 ns) sat between `imem_data` and the read mux. Reading the fields straight from the instruction took
+   `imem_data` to `dmem_addr` from 15.4 to 11.4 ns in the ideal-wire preview and from 21.4 to 18.9 ns routed (predicted 3 ns gain, got 2.5), signoff slack from -2.38 to -0.01 ns, area +0.3%.
+   `SYNTH_ADDER_TYPE` was measured first and is not a lever: `YOSYS` and `FA` give identical netlists (15.43 ns), `CSA` 24.8 and `RCA` 39.5, so the default adder is already the fast one
+   and the carry chain was not the problem. Two companion edits were made in the same run and not measured apart: the address no longer has an opcode select
+   (preview 15.43 to 15.35 ns on its own, 1.4 to 1.8 ns on the flop segments), and the adder offset comes from the instruction bits (preview +0.4 ns, no gain on its own).
+   Flop to flop got 1.0 ns worse routed, the same 1 to 2 ns placement noise as in item 7.
+9. **Hold buffers are a margin artifact** (t17, reports before repair). 1271 of the 1277 sit between a flop output and a mux input on the
    register-file and CSR hold loops, which do not violate: worst hold slack before repair is +0.062 ns (fast corner), +0.70 ns on a sample slow-corner loop.
    The repair tops each up to the 0.10 ns margin (`PL_RESIZER_HOLD_SLACK_MARGIN`, over 0.25 ns clock uncertainty). A policy question for a
    real chip; irrelevant for an FPGA.
-9. **`l0.sdc` gave `rst_n` an input delay of 0** against a clock that reaches the flops 1.13 ns late: 403 removal violations before repair (worst -1.59 ns),
+10. **`l0.sdc` gave `rst_n` an input delay of 0** against a clock that reaches the flops 1.13 ns late: 403 removal violations before repair (worst -1.59 ns),
    all `rst_n` to a flop reset pin. A fair constraint gives the reset the host's registered release time. Not changed, so t14 to t18 stay comparable.
-10. **Fill is not the timing lever** (t16): 55% fill gave a die 26% smaller and wires 8% shorter, and slack 1.2 ns worse. 65% does not place (t15).
-11. **A hard target costs time**: the post-clock-tree timing repair was 40 of t9's 56 minutes. With `l0.sdc` it is short. Synthesis through clock tree is
+11. **Fill is not the timing lever** (t16): 55% fill gave a die 26% smaller and wires 8% shorter, and slack 1.2 ns worse. 65% does not place (t15).
+12. **A hard target costs time**: the post-clock-tree timing repair was 40 of t9's 56 minutes. With `l0.sdc` it is short. Synthesis through clock tree is
     about 2 minutes; signoff checks (stream-out, DRC, LVS, XOR) about 3.5.
-12. **The layout is manufacturable** in every finished run. Only slow-corner timing is open.
+13. **The layout is manufacturable** in every finished run. Only slow-corner timing is open.
 
 ## Next candidates
 
-- The adder structure on the limiting segment. Synthesis and the resizer stop once the 44 ns target is met, so the carry chain is whatever just meets it
-  (slack drops about 0.5 ns per bit toward bit 31). `SYNTH_ADDER_TYPE` (`YOSYS` default, `FA`, `RCA`, `CSA`) and a tighter synthesis target are the levers; the
-  question to answer first is how deep the adder is in the synthesized netlist (`screen.sh`), not which setting is faster.
-- Fix the `rst_n` input delay in `l0.sdc` (item 9).
+- The remaining path at 44 ns is one path 11 ps short (`imem_data` to `dmem_addr[31]`, 18.9 ns routed). A 3 to 4 ns gap below 44 ns would be needed
+  before the clock can be lowered at all; the next biggest segments are `imem_data` to flop (28.3 ns) and flop to flop (25.8 ns), both in the ALU and
+  control selection after the register read. The same question as t20 for each: what sits in front of the register read or the operand muxes that does not have to.
+- Fix the `rst_n` input delay in `l0.sdc` (item 10).
+- Carry the register read and address changes to k0 (it also has atomics, which use `rs1` as the address with no offset).
 
 ## Reproducing
 

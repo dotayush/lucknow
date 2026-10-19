@@ -65,20 +65,22 @@ After them, everything is serial: `taken` from the ALU compare, then the trap ch
 
 Segments (`segments.sh`, slow corner, extracted wires, no I/O delays), before and after splitting the trap (`t17` to `t18`):
 
-| segment | `t17` before | `t18` after the trap split | `t19` after the address adder |
-|---|---|---|---|
-| pc to `imem_addr` | 3.3 | 3.6 | 3.0 |
-| `imem_data` to `dmem_addr`/ctl/`dmem_wdata` | 23.7 | 23.6 | **21.4** |
-| `imem_data` to flop | 35.8 | **29.3** | 30.1 |
-| `dmem_rdata` to flop | 6.8 | 6.8 | 6.6 |
-| flop to `dmem_addr`/ctl/`dmem_wdata` | 19.5 | 17.6 | 15.5 |
-| flop to flop | 31.7 | **23.0** | 24.8 |
+| segment | `t17` before | `t18` after the trap split | `t19` after the address adder | `t20` decode out of the register read |
+|---|---|---|---|---|
+| pc to `imem_addr` | 3.3 | 3.6 | 3.0 | 3.2 |
+| `imem_data` to `dmem_addr`/ctl/`dmem_wdata` | 23.7 | 23.6 | 21.4 | **18.9** |
+| `imem_data` to flop | 35.8 | **29.3** | 30.1 | 28.3 |
+| `dmem_rdata` to flop | 6.8 | 6.8 | 6.6 | 8.0 |
+| flop to `dmem_addr`/ctl/`dmem_wdata` | 19.5 | 17.6 | 15.5 | 16.5 |
+| flop to flop | 31.7 | **23.0** | 24.8 | 25.8 |
 
 Segment times are not a floor: the resizer stops once a constraint is met, so the same logic is slower under a looser target.
 
 With `T_mem` = 4 ns the chain through memory twice is about 3.0 + 4 + 21.4 + 4 + 6.6 = 39 ns for `t19`'s layout. The limiting segment
 under `l0.sdc` is `imem_data` to `dmem_addr`: the trap split did not touch it (signoff slack at 44 ns stayed at -4.6 ns), the address adder
-took 2.2 ns off it (-2.4 ns). Its slack falls about 0.5 ns per address bit, so the carry chain of the address adder is the next thing to look at.
+took 2.2 ns off it (-2.4 ns). `t20` took the decoder out of the register read: the register file used to read the decoder's `rs1`/`rs2`, which are zeroed for
+instructions that do not use them, so a decode net with fanout 134 (4 ns) sat in front of the read mux. It now reads the instruction fields directly,
+which took `imem_data` to `dmem_addr` to 18.9 ns and the signoff slack to -0.01 ns (one path). The chain is then 3.2 + 4 + 18.9 + 4 + 8.0 = 38 ns.
 
 ## 4. What the trap split changed
 
@@ -93,8 +95,8 @@ part reaches `next_pc`, `mepc`, `mcause`, `mtval` and `mstatus`, as the last mux
 Done: the trap split (section 4) and the dedicated address adder. Loads, stores and `jalr` used to send `rs1 + imm` through the shared ALU,
 with its operand and op-select muxes in front and the result mux behind; it now has its own adder (`addr_sum` in `control.sv`).
 
-1. **The adder structure.** Synthesis and the resizer only have to meet the clock target, so the carry chain is whatever just meets it; slack on the
-   address bits falls about 0.5 ns per bit. Look at the adder depth in the synthesized netlist first (`screen.sh`), then at `SYNTH_ADDER_TYPE` and the target.
+1. **Anything between the instruction and the register read or the operand muxes that does not have to be there** (found in `t20`: gated `rs1`).
+   The adder structure is not the lever: `SYNTH_ADDER_TYPE` `YOSYS` and `FA` give the same netlist and `CSA` and `RCA` are slower (`RUNS.md` item 8).
 2. **Memory timing as a design input.** `T_mem` counts twice. A registered memory read removes the fetch from the chain; that needs a
    pipeline stage (l0 documents "no stall mechanism"), so it is a k0-level decision.
 3. **Pipelining** (fetch | decode and register read | execute | memory and write-back) splits the register read and ALU across cycles, at the cost
@@ -139,3 +141,50 @@ with its operand and op-select muxes in front and the result mux behind; it now 
   shape: clock-referenced input delay of T/2 + clock-to-`dout` for the data and the 0.10 ns setup as output delay on the
   address. That belongs with the k0 interface (wait states), when the memory plan for k0 is decided; on an FPGA the
   memory is block RAM or external SDRAM instead.
+
+## 6. The same design on three PDKs
+
+One full flow per PDK, same RTL (the `t20` core), same flow, same `l0.sdc` structure, judged at each PDK's slowest corner with the largest wire RC
+(sky130 `max_ss_100C_1v60`, gf180mcu `max_ss_125C_4v50`; IHP only has nominal extraction rules, so `nom_slow_1p08V_125C`).
+The ns in `l0.sdc` (memory 4 ns, budgets 6 and 10 ns, uncertainty 0.25 ns) and the clock target are scaled by the PDK's FO4 delay, so each PDK gets the same budget in gate delays:
+the first IHP run with unscaled budgets (25 ns, 107 violating paths, -5.9 ns) only showed that the sky130 nanoseconds do not carry over.
+
+FO4 = the delay of an inverter driving four inverters, from the liberty file at the slow corner (`fo4.sh`, ideal wires, `inv_1`):
+
+| | sky130 hd (t20) | IHP SG13G2 (t24) | gf180mcu 7t 5V (t25) |
+|---|---|---|---|
+| slow corner | ss 100C 1.6 V | slow 125C 1.08 V | ss 125C 4.5 V |
+| FO4 slow / typical | 131 / 77 ps | 99 / 65 ps | 414 / 236 ps |
+| clock target | 44.0 ns | 33.1 ns | 138.8 ns |
+| slack at the slow corner | -0.01 ns | +1.10 ns | +2.78 ns |
+| **period needed, slow corner** | **44.0 ns** (22.7 MHz) | **32.0 ns** (31.3 MHz) | **136.0 ns** (7.4 MHz) |
+| ... in FO4 | 335 | 324 | 329 |
+| ... relative to sky130 | 1.00 | 0.73 | 3.09 |
+| period needed, typical corner | 40.4 ns (24.7 MHz) | 30.0 ns (33.3 MHz) | 126.1 ns (7.9 MHz) |
+| standard cell area | 122,226 um2 | 185,254 um2 | 371,327 um2 |
+| ... in NAND2 equivalents (min NAND2: 3.75 / 7.26 / 10.98 um2) | 32,562 | 25,526 | 33,831 |
+| signoff (DRC, LVS, antenna) | clean | clean | LVS and Magic DRC clean; KLayout DRC not reported |
+
+Segments, extracted wires, no I/O delays (`segments.sh`), in ns and in FO4:
+
+| segment | sky130 | IHP | gf180mcu |
+|---|---|---|---|
+| `pc` to `imem_addr` | 3.2 (24) | 1.7 (17) | 9.1 (22) |
+| `imem_data` to `dmem_addr` | 18.9 (144) | 11.0 (111) | 47.2 (114) |
+| `imem_data` to flop | 28.3 (216) | 17.9 (181) | 71.8 (173) |
+| `dmem_rdata` to flop | 8.0 (61) | 5.3 (54) | 21.5 (52) |
+| flop to `dmem_addr` | 16.5 (126) | 7.8 (79) | 34.0 (82) |
+| flop to flop | 25.8 (196) | 14.7 (149) | 54.8 (132) |
+
+What this says:
+- **Gate speed is the first-order difference.** The same netlist needs 324 to 335 FO4 on all three; the period differs by the FO4 delay: IHP 0.73 of sky130, gf180mcu 3.1 times.
+  This is partly by construction (the targets were scaled by FO4 and the two non-sky130 runs closed with slack), so the per-segment FO4 counts say more than the period does.
+- **Sky130's segments are the deepest in FO4** (address path 144 against 111 and 114). sky130 was run to zero slack, so its resizer worked on the whole design to hit 44 ns;
+  IHP and gf180mcu closed with slack and were not pushed. Segment times are therefore not floors (item at the top of section 3).
+- **Fewer FO4 per segment on the two other libraries is not a faster architecture**: it may be the libraries (sizes and drive strengths on offer) and the slack they closed with; this run cannot separate the two.
+- **Area**: in NAND2 equivalents the three are within 25% of each other (IHP 0.78, gf180mcu 1.04 of sky130), so the die size differences are the cell sizes.
+- **IHP** is a BiCMOS process for analog and RF; its digital library is a secondary offering, so treat it as a 130 nm class CMOS data point, not as the digital reference.
+- gf180mcu is a 5 V process: it is 3.1 times slower per period, and the KLayout DRC step did not report for it.
+- Not covered: power (different supplies), clock tree differences, wires from a tuned flow per PDK. A shorter target per PDK would show the true minimum period.
+
+The metrics of the three runs are in `results/t20.metrics.json`, `results/t24.metrics.json` and `results/t25.metrics.json` (the run folders are deleted).
