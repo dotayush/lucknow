@@ -54,7 +54,6 @@ module l0_core #(
   wire [$clog2(DATA_WIDTH)-1:0] rd;
 
   reg [1:0] mem_access_type;
-  reg [DATA_WIDTH-1:0] addr;
   reg [DATA_WIDTH-1:0] data_in;
   wire [DATA_WIDTH-1:0] data_out = dmem_rdata;
   wire [1:0] mem_error = dmem_err;
@@ -80,7 +79,11 @@ module l0_core #(
   wire [DATA_WIDTH-1:0] br_target = pc + sign_extended_data; // jal and taken branches go here
   // load and store addresses and the jalr target have their own adder, off the alu's operand and result muxes: the address is
   // the longest thing between the instruction and the memory
-  wire [DATA_WIDTH-1:0] addr_sum = rs1_data + sign_extended_data;
+  // its offset comes straight from the instruction bits: a store (opcode[6:5] == 01) has the low five bits in [11:7], loads and
+  // jalr in [24:20]. no decode in front of the adder.
+  wire [DATA_WIDTH-1:0] addr_off = {{20{instruction[31]}}, instruction[31:25], (!instruction[6] && instruction[5]) ? instruction[11:7] : instruction[24:20]};
+  wire [DATA_WIDTH-1:0] addr_sum = rs1_data + addr_off;
+  wire [DATA_WIDTH-1:0] addr = addr_sum; // not selected by the instruction: memory only looks at it while mem_read or mem_write is set
   reg [3:0] trap_cause;
   reg [DATA_WIDTH-1:0] trap_value;
   wire [DATA_WIDTH-1:0] trap_vector;
@@ -109,7 +112,6 @@ module l0_core #(
   logic [4:0] l_alu_op;
   logic [4:0] l_sx_op2;
   logic [DATA_WIDTH-1:0] l_unextended_data2;
-  logic [DATA_WIDTH-1:0] l_addr;
   logic [1:0] l_mem_access_type;
 
   always @* begin
@@ -124,7 +126,6 @@ module l0_core #(
     l_alu_op = ALU_NOP;
     l_sx_op2 = SX_NOP;
     l_mem_access_type = WORD_MEM_ACCESS;
-    l_addr = '0;
     data_in = '0;
     rd_data = '0;
     l_unextended_data2 = '0;
@@ -140,7 +141,6 @@ module l0_core #(
 
     if (!reg_write && mem_write && !mem_read) begin
       // STORE operations => data_memory[rs1_data + sign_extend(immediate)] = sign_extended(rs2_data);
-      l_addr = addr_sum; // memory_address = rs1_data + sign_extend(immediate)
 
       case (f3)
         S_SW: begin
@@ -321,7 +321,6 @@ module l0_core #(
     end
     else if (reg_write && !mem_write && mem_read) begin
       // LOAD operations => rd_data = data_memory[rs1_data + sign_extended(immediate)];
-      l_addr = addr_sum; // memory_address = rs1_data + sign_extend(immediate)
 
       case (f3)
         I_LW: begin
@@ -498,7 +497,6 @@ module l0_core #(
     alu_op = l_alu_op;
     sx_op2 = l_sx_op2;
     unextended_data2 = l_unextended_data2;
-    addr = l_addr;
     mem_access_type = l_mem_access_type;
   end
 
@@ -606,8 +604,8 @@ module l0_core #(
   ) regfile_inst (
     .clk(clk),
     .rst_n(rst_n),
-    .rs1(rs1),
-    .rs2(rs2),
+    .rs1(instruction[19:15]), // the register file reads whatever the fields say; the decoder's rs1/rs2 (zero when unused) would put decode in front of the read
+    .rs2(instruction[24:20]),
     .rs1_data(rs1_data),
     .rs2_data(rs2_data),
     .reg_write((reg_write || csr_to_rd) && !trap_early), // a trapping instruction does not retire (a taken branch writes nothing)
