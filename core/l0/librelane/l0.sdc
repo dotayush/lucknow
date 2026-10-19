@@ -8,8 +8,8 @@
 # are scaled by the ratio of the FO4 delays (PDK_FO4_PS, fo4.sh), so every PDK gets the same budget in gate delays:
 set S [expr {$::env(PDK_FO4_PS) / 131.3}]
 set T_MEM     [expr {4.0 * $S}]   ;# memory access time, address in to data out, wires included
-set B_PC_OUT  [expr {6.0 * $S}]   ;# pc flop -> imem_addr      (measured 4.8 on t9, slow corner)
-set B_LOAD    [expr {10.0 * $S}]  ;# dmem_rdata -> flop        (measured 9.5 on t9)
+set B_PC_OUT  [expr {4.25 * $S}]  ;# pc flop -> imem_addr      (3.2 ns routed on t32 plus driver, port load and uncertainty; 4.0 fails by 0.13, t30)
+set B_LOAD    [expr {10.0 * $S}]  ;# dmem_rdata, dmem_err -> flop (dmem_err through the trap tree needs about 10; 9.0 fails by 1.0, t28)
 #
 # what each port constraint then means (T = clock period):
 #   imem_data arrives B_PC_OUT + T_MEM after the clock edge
@@ -27,7 +27,7 @@ set T $::env(CLOCK_PERIOD)
 
 set_input_delay -clock $clk [expr {$B_PC_OUT + $T_MEM}] [get_ports {imem_data* imem_err*}]
 set_input_delay -clock $clk [expr {$T - $B_LOAD}] [get_ports {dmem_rdata* dmem_err*}]
-set_input_delay -clock $clk 0 [get_ports rst_n]
+set_input_delay -clock $clk [expr {1.5 * $S}] [get_ports rst_n]   ;# the host releases reset from a flop of its own (t14 to t26 used 0 and had removal violations)
 
 set_output_delay -clock $clk [expr {$T - $B_PC_OUT}] [get_ports {imem_addr*}]
 set_output_delay -clock $clk [expr {$T_MEM + $B_LOAD}] [get_ports {dmem_addr* dmem_wdata* dmem_size* dmem_read dmem_write}]

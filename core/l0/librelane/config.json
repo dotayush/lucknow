@@ -10,7 +10,7 @@
     "dir::../src/control.sv"
   ],
   "CLOCK_PORT": "clk",
-  "CLOCK_PERIOD": 50,
+  "CLOCK_PERIOD": 41,
   "FP_SIZING": "relative",
   "FP_CORE_UTIL": 40,
   "PL_TARGET_DENSITY_PCT": 50
