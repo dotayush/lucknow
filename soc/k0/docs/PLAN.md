@@ -190,8 +190,7 @@ Exit: shell prompt, typed command runs and prints, in simulation.
 
 ## Optional, after boot works
 
-- Hardware: a pipelined core or a multi-cycle divider if frequency matters on FPGA (the
-  single-cycle `/` and `%` are a long combinational path).
+- Hardware: a pipelined core if frequency matters on FPGA (the divider is already multi-cycle, `core/divider.sv`).
 - Storage: an SD-card-over-SPI or virtio-mmio block device for a root filesystem.
 - Debug: the debug trigger module so `breakpoint` runs; semihosting for faster console.
 - Real board: pick an FPGA board, memory controller, clock; measure `timebase-frequency`.

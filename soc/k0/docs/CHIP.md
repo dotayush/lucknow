@@ -56,11 +56,13 @@ the next fetch. `memory/bootrom.hex` is only 4 words; the rest of the rom reads 
 ## Instructions
 
 - **RV32I** as in l0 (see `core/l0/docs/CHIP.md`), plus:
-- **M**: `mul mulh mulhsu mulhu div divu rem remu`, each computed combinationally in the
-  ALU in one clock (division by zero and overflow follow the spec). The ALU has one 33 bit signed multiplier
-  for the four multiplies and one unsigned restoring divider (on the absolute values, signs fixed afterwards)
-  for the four divides, instead of one array per instruction: the separate arrays (three 64x64 multiplies and
-  four 32 bit dividers) did not get through logic synthesis in 40 minutes (`librelane/RUNS.md`).
+- **M**: `mul mulh mulhsu mulhu div divu rem remu`. The four multiplies are combinational in the ALU, in one clock, through one 33 bit
+  signed multiplier. The four divides run in `core/divider.sv`, one quotient bit per clock (restoring divider on the absolute values,
+  signs fixed at the end), and hold the core with `stall` like a slow memory: **a divide takes 34 clocks** (1 to load the operands,
+  32 for the bits, 1 to retire). Division by zero (`x / 0` = all ones, `x % 0` = x) and overflow (`min int / -1` = min int, remainder 0)
+  follow the spec. An interrupt arriving while a divide runs is taken at once: the divide is abandoned (nothing was written) and runs again
+  after `mret`, like the atomics. Why: the single-cycle `/` and `%` were 66 ns of a 83 ns ideal-wire path, and the arrays of one
+  multiplier and one divider per instruction did not get through logic synthesis (`librelane/RUNS.md`).
 - **A**: `lr.w`, `sc.w` and `amoswap/add/xor/and/or/min/max/minu/maxu.w`.
   - Word only (`f3 = 010`); `.aq/.rl` bits are accepted and ignored (nothing reorders).
   - `lr.w` takes a one-word reservation. It is cleared by any store, any `sc`/AMO, a trap and `mret`.
@@ -195,7 +197,8 @@ lowest id on a tie. Only the UART is connected (source 10).
 | file | role |
 |---|---|
 | `core/control.sv` | the core: datapath, A-extension sequencing, interrupts, stalls, trap selection. Loads, stores and `jalr` compute `rs1 + imm` on their own adder, not through the alu |
-| `core/decoder.sv` `alu.sv` `regfile.sv` `signext.sv` | as in l0; the ALU also does M |
+| `core/decoder.sv` `alu.sv` `regfile.sv` `signext.sv` | as in l0; the ALU also does the four multiplies |
+| `core/divider.sv` | div, divu, rem, remu: one bit per clock, started and held by `control.sv` through `stall` |
 | `core/csrfile.sv` | CSRs, interrupt pending/enable logic, 64-bit counters |
 | `core/cache.sv` | despite the name, a plain ram/rom array with a second read-only fetch port |
 | `core/clint.sv` `plic.sv` `uart.sv` | the devices |

@@ -18,7 +18,7 @@ digital designs i've created at the heart of the city of lucknow, india!
   - educational/hobby purpose
 
 - ./soc/k0 (work in progress)
-  - core l0 plus the m extension (mul, mulh, mulhsu, mulhu, div, divu, rem, remu)
+  - core l0 plus the m extension (mul, mulh, mulhsu, mulhu in one clock; div, divu, rem, remu in 34 clocks, one bit per clock)
     and the a extension (lr.w, sc.w, and the nine word amos; one word reservation, any store clears it)
   - one memory map for both ports (qemu virt like): boot rom @ `0x0000_1000` (reset vector),
     ram @ `0x8000_0000`. the instruction port and the data port see the same ram, so code can

@@ -178,4 +178,4 @@ Use QEMU for day to day work and the model when the question is about the core i
 - No S-mode, no supervisor interrupts. The kernel runs in M-mode, which Linux supports only without an MMU.
 - Misaligned accesses trap, emulation is in software.
 - No block device, no network, no second hart.
-- Not tried on hardware: the clock, memory (a 16 MiB array), timing closure of a single-cycle path.
+- Not tried on hardware: the clock, memory (a 16 MiB array), timing closure of the core path (the core is not pipelined; divides take 34 clocks).
