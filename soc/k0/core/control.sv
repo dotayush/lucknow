@@ -816,8 +816,8 @@ module control #(
   ) regfile_inst (
     .clk(clk),
     .rst_n(rst_n),
-    .rs1(rs1),
-    .rs2(rs2),
+    .rs1(instruction[19:15]), // the fields as they are: the decoder's rs1/rs2 (zero when unused) would put decode in front of the read
+    .rs2(instruction[24:20]),
     .rs1_data(rs1_data),
     .rs2_data(rs2_data),
     .reg_write((reg_write || csr_to_rd) && !trap_early && !stall), // a trapping or waiting instruction does not retire (a taken branch writes nothing)
