@@ -4,10 +4,12 @@
 # memory, so the cycle is cut at the ports and each piece gets a budget that adds up to the period.
 # Replaces LibreLane's generic fallback (20% of the period on every input and output).
 #
-# budgets in ns (assumptions, change them when the real memory is known):
-set T_MEM     4.0   ;# memory access time, address in to data out, wires included
-set B_PC_OUT  6.0   ;# pc flop -> imem_addr      (measured 4.8 on t9, slow corner)
-set B_LOAD    10.0  ;# dmem_rdata -> flop        (measured 9.5 on t9)
+# budgets in ns of sky130 hd at its slow corner (assumptions, change them when the real memory is known). On another PDK they
+# are scaled by the ratio of the FO4 delays (PDK_FO4_PS, fo4.sh), so every PDK gets the same budget in gate delays:
+set S [expr {$::env(PDK_FO4_PS) / 131.3}]
+set T_MEM     [expr {4.0 * $S}]   ;# memory access time, address in to data out, wires included
+set B_PC_OUT  [expr {6.0 * $S}]   ;# pc flop -> imem_addr      (measured 4.8 on t9, slow corner)
+set B_LOAD    [expr {10.0 * $S}]  ;# dmem_rdata -> flop        (measured 9.5 on t9)
 #
 # what each port constraint then means (T = clock period):
 #   imem_data arrives B_PC_OUT + T_MEM after the clock edge
@@ -17,8 +19,8 @@ set B_LOAD    10.0  ;# dmem_rdata -> flop        (measured 9.5 on t9)
 # so imem_data -> dmem_addr (decode, regfile, alu) gets T - (B_PC_OUT + T_MEM) - (T_MEM + B_LOAD).
 
 create_clock -name $::env(CLOCK_PORT) -period $::env(CLOCK_PERIOD) [get_ports $::env(CLOCK_PORT)]
-set_clock_uncertainty 0.25 [get_clocks $::env(CLOCK_PORT)]
-set_clock_transition 0.15 [get_clocks $::env(CLOCK_PORT)]
+set_clock_uncertainty [expr {0.25 * $S}] [get_clocks $::env(CLOCK_PORT)]
+set_clock_transition [expr {0.15 * $S}] [get_clocks $::env(CLOCK_PORT)]
 
 set clk [get_clocks $::env(CLOCK_PORT)]
 set T $::env(CLOCK_PERIOD)
@@ -30,7 +32,7 @@ set_input_delay -clock $clk 0 [get_ports rst_n]
 set_output_delay -clock $clk [expr {$T - $B_PC_OUT}] [get_ports {imem_addr*}]
 set_output_delay -clock $clk [expr {$T_MEM + $B_LOAD}] [get_ports {dmem_addr* dmem_wdata* dmem_size* dmem_read dmem_write}]
 
-set_driving_cell -lib_cell $::env(PDK_DRIVING_CELL) -pin Y [all_inputs -no_clocks]
+set_driving_cell -lib_cell $::env(PDK_DRIVING_CELL) -pin $::env(PDK_DRIVING_PIN) [all_inputs -no_clocks]
 set_load 0.05 [all_outputs]
 
 # dmem_rdata also reaches dmem_wdata structurally (the load result and the store data share one sign extender,

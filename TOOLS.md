@@ -59,15 +59,17 @@ under `$EDA/pdk/ciel/` and the choice is only the variable.
 
 | | sky130 (default) | gf180mcu |
 |---|---|---|
-| `PDK_VERSION` (ciel, open_pdks build) | `8afc8346...` (2025-07-14), 2.2 GB | `41a53dde...`, 3.6 GB |
+| `PDK_VERSION` (ciel, open_pdks build, the one LibreLane 3.0.16 pins) | `8afc8346...` (2025-07-14), 2.2 GB | `54435919...`, 3.6 GB |
 | `PDK_DIGITAL` / `PDK_ANALOG` | `sky130A` / `sky130B` | `gf180mcuD` / `gf180mcuD` |
 | `STD_CELL_LIBRARY` | `sky130_fd_sc_hd` | `gf180mcu_fd_sc_mcu7t5v0` |
 | `PDK_SLOW`, `PDK_TYP` | `ss_100C_1v60`, `tt_025C_1v80` | `ss_125C_4v50`, `tt_025C_5v00` |
 | `PDK_DELAY_CELLS` kept out of buffering | `clkdlybuf*`, `dlymetal*` | none |
-| tested | everything | `l0_core` synthesis (`screen.sh`) only |
+| tested | everything | the l0 flow (`run.sh`, `screen.sh`); the analog flow is sky130 only |
 
-`./eda.sh install pdk` fetches the selected one. Only the digital flow is PDK independent: the analog blocks of aicex are sky130
-(`verify` skips them for another family). Timing budgets in `l0.sdc` are assumptions made for sky130 and need a second look on another PDK.
+`ihp-sg13g2` (IHP SG13G2, 130 nm BiCMOS, `PDK_VERSION` `c4b8b4e5...`) is in the table too and goes through the same l0 flow. `PDK_FO4_PS` (inverter FO4 delay, `core/l0/librelane/fo4.sh`) scales the `l0.sdc` budgets, so a PDK's constraints are the same in gate delays; a new family needs it in `.env`.
+
+`./eda.sh install pdk` fetches the selected one. Switching `PDK_FAMILY` in a shell that already sourced `eda.sh` keeps the old `PDK_*` values: open a new shell. Only the digital flow is PDK independent: the analog blocks of aicex are sky130
+(`verify` skips them for another family). Timing budgets in `l0.sdc` are assumptions made for sky130 (scaled by FO4 on another PDK).
 
 `.env` has two more settings: `EDA` (required) and `EXTRA_PATH`, a `:` separated list appended to `PATH` for tools that are not under
 `$EDA` (ngspice). `install` needs `git`, `curl`, `python3-venv`, a C/C++ toolchain, Tcl/Tk and X11

@@ -37,13 +37,18 @@ export EDA
 #   PDK_DIGITAL        variant the digital flow (librelane) runs on;  PDK_ANALOG: variant the analog flow (aicex, magic) runs on
 #   STD_CELL_LIBRARY   standard cell library the digital flow maps to
 #   PDK_SLOW, PDK_TYP  liberty corners (<process>_<temp>_<voltage>): the slow one timing is judged in, the typical one for viewing
+#   PDK_DRIVING_CELL, PDK_DRIVING_PIN   inverter that drives the inputs in the SDC and its output pin (defaults: <library>__inv_2, Y)
+#   PDK_FO4_PS         delay of an inverter driving four inverters at PDK_SLOW, in ps (core/l0/librelane/fo4.sh). l0.sdc scales its budgets with it
 #   PDK_DELAY_CELLS    delay cells (comma separated patterns, without the library prefix) the resizer must not use as buffers
 PDK_FAMILY=${PDK_FAMILY:-sky130}
 case $PDK_FAMILY in
-  sky130)   : "${PDK_VERSION:=8afc8346a57fe1ab7934ba5a6056ea8b43078e71}" "${PDK_DIGITAL:=sky130A}" "${PDK_ANALOG:=sky130B}" \
+  sky130)   : "${PDK_FO4_PS:=131.3}" "${PDK_VERSION:=8afc8346a57fe1ab7934ba5a6056ea8b43078e71}" "${PDK_DIGITAL:=sky130A}" "${PDK_ANALOG:=sky130B}" \
               "${STD_CELL_LIBRARY:=sky130_fd_sc_hd}" "${PDK_SLOW:=ss_100C_1v60}" "${PDK_TYP:=tt_025C_1v80}" "${PDK_DELAY_CELLS:=clkdlybuf*,dlymetal*}" ;;
-  gf180mcu) : "${PDK_VERSION:=41a53ddee76f633213fda134379f521458b63d74}" "${PDK_DIGITAL:=gf180mcuD}" "${PDK_ANALOG:=gf180mcuD}" \
-              "${STD_CELL_LIBRARY:=gf180mcu_fd_sc_mcu7t5v0}" "${PDK_SLOW:=ss_125C_4v50}" "${PDK_TYP:=tt_025C_5v00}" "${PDK_DELAY_CELLS:=}" ;;
+  gf180mcu) : "${PDK_FO4_PS:=414.1}" "${PDK_VERSION:=54435919abffb937387ec956209f9cf5fd2dfbee}" "${PDK_DIGITAL:=gf180mcuD}" "${PDK_ANALOG:=gf180mcuD}" \
+              "${STD_CELL_LIBRARY:=gf180mcu_fd_sc_mcu7t5v0}" "${PDK_SLOW:=ss_125C_4v50}" "${PDK_TYP:=tt_025C_5v00}" "${PDK_DELAY_CELLS:=}" "${PDK_DRIVING_PIN:=ZN}" ;;
+  ihp-sg13g2) : "${PDK_FO4_PS:=98.9}" "${PDK_VERSION:=c4b8b4e5e7a05f375cca3815d51b3a37721fbf5c}" "${PDK_DIGITAL:=ihp-sg13g2}" "${PDK_ANALOG:=ihp-sg13g2}" \
+              "${STD_CELL_LIBRARY:=sg13g2_stdcell}" "${PDK_SLOW:=slow_1p08V_125C}" "${PDK_TYP:=typ_1p20V_25C}" "${PDK_DELAY_CELLS:=}" \
+              "${PDK_DRIVING_CELL:=sg13g2_inv_2}" ;;
 esac
 for _lk_v in PDK_VERSION PDK_DIGITAL PDK_ANALOG STD_CELL_LIBRARY PDK_SLOW PDK_TYP; do
   eval "_lk_x=\${$_lk_v:-}"
@@ -53,9 +58,19 @@ for _lk_v in PDK_VERSION PDK_DIGITAL PDK_ANALOG STD_CELL_LIBRARY PDK_SLOW PDK_TY
   fi
 done
 unset _lk_v _lk_x
-export PDK_FAMILY PDK_VERSION PDK_DIGITAL PDK_ANALOG STD_CELL_LIBRARY PDK_SLOW PDK_TYP PDK_DELAY_CELLS
-export PDK_DRIVING_CELL=${PDK_DRIVING_CELL:-${STD_CELL_LIBRARY}__inv_2}       # what drives the inputs in the SDC
+export PDK_FO4_PS PDK_FAMILY PDK_VERSION PDK_DIGITAL PDK_ANALOG STD_CELL_LIBRARY PDK_SLOW PDK_TYP PDK_DELAY_CELLS
+export PDK_DRIVING_CELL=${PDK_DRIVING_CELL:-${STD_CELL_LIBRARY}__inv_2}       # what drives the inputs in the SDC, and its output pin
+export PDK_DRIVING_PIN=${PDK_DRIVING_PIN:-Y}
 export PDK_ROOT=$EDA/pdk/ciel/$PDK_FAMILY/versions/$PDK_VERSION               # no trailing slash: '//' starts a comment for ngspice < 40
+# the slow corner liberty and the LEFs of the standard cell library, found by pattern because the PDKs name them differently (empty until the PDK is installed)
+unset PDK_LIB_SLOW PDK_TECH_LEF PDK_CELL_LEF
+_lk_r=$PDK_ROOT/$PDK_DIGITAL/libs.ref/$STD_CELL_LIBRARY
+for _lk_f in "$_lk_r/lib/${STD_CELL_LIBRARY}__$PDK_SLOW.lib" "$_lk_r/lib/${STD_CELL_LIBRARY}_$PDK_SLOW.lib"; do [ -f "$_lk_f" ] && PDK_LIB_SLOW=$_lk_f; done
+_lk_f=$(ls "$_lk_r/techlef" 2>/dev/null | grep '__nom.tlef$' | head -1); [ -n "$_lk_f" ] && PDK_TECH_LEF=$_lk_r/techlef/$_lk_f
+[ -z "${PDK_TECH_LEF:-}" ] && { _lk_f=$(ls "$_lk_r/lef" 2>/dev/null | grep '_tech.lef$' | head -1); [ -n "$_lk_f" ] && PDK_TECH_LEF=$_lk_r/lef/$_lk_f; }
+[ -f "$_lk_r/lef/$STD_CELL_LIBRARY.lef" ] && PDK_CELL_LEF=$_lk_r/lef/$STD_CELL_LIBRARY.lef
+unset _lk_r _lk_f
+export PDK_LIB_SLOW PDK_TECH_LEF PDK_CELL_LEF
 export LIBRELANE_PDK_ROOT=$EDA/pdk                                            # ciel layout, for: librelane --pdk-root
 export PDK=$PDK_ANALOG                                                        # what aicex's makefiles read
 export AICEX=$EDA/src/aicex

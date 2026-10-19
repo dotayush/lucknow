@@ -9,9 +9,10 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 source "$HERE/../../../eda.sh"
 final=$(readlink -f "$1"); corner=${2:-max_$PDK_SLOW}
 pvt=${corner#*_}; rc=${corner%%_*}
+[ -d "$final/spef/$rc" ] || rc=nom   # a PDK with only nominal extraction rules (IHP)
 tcl=$(mktemp "${TMPDIR:-/tmp}/segments-XXXXXX.tcl")
 cat > "$tcl" <<TCL
-read_liberty $PDK_ROOT/$PDK_DIGITAL/libs.ref/$STD_CELL_LIBRARY/lib/${STD_CELL_LIBRARY}__$pvt.lib
+read_liberty ${PDK_LIB_SLOW%$PDK_SLOW.lib}$pvt.lib
 read_db $final/odb/l0_core.odb
 create_clock -name clk -period 100 [get_ports clk]
 set_propagated_clock [get_clocks clk]
